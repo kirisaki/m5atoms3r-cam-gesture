@@ -13,6 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "hand_detect.hpp"
+#include "capture_display.h"
 
 #ifdef HAND_EVAL_FIXTURE
 extern const uint8_t hand_fixture[] asm("_binary_hand_fixture_start");
@@ -24,6 +25,7 @@ extern const uint8_t background_fixture[] asm("_binary_background_fixture_start"
 namespace {
 constexpr int Width = 320, Height = 240;
 constexpr char Tag[] = "hand_eval";
+CaptureDisplay display;
 
 esp_err_t start_camera() {
     gpio_config_t power{};
@@ -69,7 +71,10 @@ void snapshot(const uint8_t *rgb, uint32_t sequence, bool rotated, bool paced = 
         }
         row[Height * 3 * 2] = '\0';
         printf("HAND_IMAGE_ROW %d %s\n", y, row);
-        if (paced || y % 32 == 31) vTaskDelay(1);
+        if (paced || y % 32 == 31) {
+            display.tick();
+            vTaskDelay(1);
+        }
     }
     printf("HAND_IMAGE_END seq=%lu\n", (unsigned long)sequence);
 }
@@ -97,9 +102,14 @@ void burst(HandDetect &detect, uint8_t *rgb, bool rotated) {
     // Discard the queued live frame, which may predate the trigger.
     camera_fb_t *stale = esp_camera_fb_get();
     if (stale) esp_camera_fb_return(stale);
+    const int64_t started = esp_timer_get_time();
+    if (!display.start()) {
+        heap_caps_free(frames);
+        printf("BURST_ERROR reason=display_no_ack\n");
+        return;
+    }
     printf("BURST_BEGIN capacity=%u rotation=%d\n", unsigned(Count), rotated ? 270 : 90);
     fflush(stdout);
-    const int64_t started = esp_timer_get_time();
     while (count < Count && esp_timer_get_time() - started < 8000000) {
         camera_fb_t *fb = esp_camera_fb_get();
         if (!fb) { ++failures; vTaskDelay(1); continue; }
@@ -110,8 +120,10 @@ void burst(HandDetect &detect, uint8_t *rgb, bool rotated) {
             timestamps[count++] = timestamp;
         } else { ++failures; }
         esp_camera_fb_return(fb);
+        display.tick();
         vTaskDelay(1);
     }
+    display.transferring();
     printf("BURST_CAPTURED frames=%u failures=%u elapsed_ms=%.1f\n", unsigned(count), failures,
            (esp_timer_get_time() - started) / 1000.0);
     for (size_t i = 0; i < count; ++i) {
@@ -132,6 +144,7 @@ void burst(HandDetect &detect, uint8_t *rgb, bool rotated) {
     }
     heap_caps_free(frames);
     printf("BURST_END frames=%u\n", unsigned(count));
+    display.idle();
     memory("burst_done");
 }
 
@@ -183,7 +196,7 @@ extern "C" void app_main() {
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&console));
     usb_serial_jtag_vfs_use_driver();
     fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK);
-    ESP_LOGI(Tag, "Hand detection evaluation; HID=OFF I2C=OFF; RGB565 QVGA -> RGB888 CW270");
+    ESP_LOGI(Tag, "Hand detection evaluation; HID=OFF I2C=capture-cue; RGB565 QVGA -> RGB888 CW270");
     ESP_LOGI(Tag, "Commands: s=snapshot b=burst r=toggle CW90/CW270 (resets to CW270 on reboot)");
     memory("boot");
     auto *rgb = static_cast<uint8_t *>(heap_caps_malloc(Width * Height * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
@@ -219,11 +232,13 @@ extern "C" void app_main() {
         vTaskDelay(1);
     }
     memory("camera_ready");
+    display.begin();
     ESP_LOGI(Tag, "READY: boxes use rotated image coordinates, width=240 height=320");
     uint32_t sequence = 0, failures = 0;
     bool rotated = true; // Presenting fingers downward needs the opposite input orientation.
     int64_t previous_timestamp = -1;
     while (true) {
+        display.tick();
         char command = 0;
         const bool save_image = read(STDIN_FILENO, &command, 1) == 1 && command == 's';
         if (command == 'r') {

@@ -104,7 +104,10 @@ def main():
     try:
         started = time.monotonic()
         while time.monotonic() - started < 25:
-            if port.readline().startswith(b'HAND_FRAME ') and time.monotonic() - started >= 5:
+            line = port.readline()
+            if b'capture_display:' in line:
+                print(line.decode('ascii', errors='replace').strip(), flush=True)
+            if line.startswith(b'HAND_FRAME ') and time.monotonic() - started >= 5:
                 break
         else:
             raise RuntimeError('Camera did not become ready')
