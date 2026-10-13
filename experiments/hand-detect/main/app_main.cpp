@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstring>
+#include <cmath>
 #include <fcntl.h>
 #include <unistd.h>
 #include "driver/gpio.h"
@@ -15,6 +16,9 @@
 
 #ifdef HAND_EVAL_FIXTURE
 extern const uint8_t hand_fixture[] asm("_binary_hand_fixture_start");
+#endif
+#ifdef HAND_EVAL_BACKGROUND
+extern const uint8_t background_fixture[] asm("_binary_background_fixture_start");
 #endif
 
 namespace {
@@ -71,28 +75,40 @@ void snapshot(const uint8_t *rgb, uint32_t sequence, bool rotated) {
 }
 
 #ifdef HAND_EVAL_FIXTURE
-void compare_rotations(HandDetect &detect, uint8_t *rgb) {
+void compare_fixture(HandDetect &detect, uint8_t *rgb, const uint8_t *source, const char *label) {
     constexpr int w = Height, h = Width;
-    for (int angle : {0, 90, 180, 270}) {
-        const int out_width = (angle % 180) ? h : w;
-        const int out_height = (angle % 180) ? w : h;
-        for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
-            int dx = x, dy = y;
-            if (angle == 90) { dx = h - 1 - y; dy = x; }
-            if (angle == 180) { dx = w - 1 - x; dy = h - 1 - y; }
-            if (angle == 270) { dx = y; dy = w - 1 - x; }
-            std::memcpy(rgb + (dy * out_width + dx) * 3, hand_fixture + (y * w + x) * 3, 3);
+    // Explicit convention: output = round(255 * pow(input / 255, exponent)).
+    // Exponents below 1 brighten shadows. Always start from the original pixels.
+    for (float exponent : {1.0f, 0.75f, 0.5f}) {
+        uint8_t lut[256];
+        for (int i = 0; i < 256; ++i) {
+            lut[i] = exponent == 1.0f ? i : std::lround(255.0f * std::pow(i / 255.0f, exponent));
         }
-        dl::image::img_t input{};
-        input.data = rgb; input.width = out_width; input.height = out_height;
-        input.pix_type = dl::image::DL_IMAGE_PIX_TYPE_RGB888;
-        const int64_t started = esp_timer_get_time();
-        const auto &results = detect.run(input);
-        ESP_LOGI(Tag, "FIXTURE rotation=%d hands=%u infer_ms=%.1f", angle, unsigned(results.size()),
-                 (esp_timer_get_time() - started) / 1000.0);
-        for (const auto &r : results) {
-            ESP_LOGI(Tag, "FIXTURE_BOX rotation=%d score=%.4f x1=%d y1=%d x2=%d y2=%d",
-                     angle, double(r.score), r.box[0], r.box[1], r.box[2], r.box[3]);
+        for (int angle : {0, 90, 180, 270}) {
+            const int out_width = (angle % 180) ? h : w;
+            const int out_height = (angle % 180) ? w : h;
+            const int64_t preprocess_started = esp_timer_get_time();
+            for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+                int dx = x, dy = y;
+                if (angle == 90) { dx = h - 1 - y; dy = x; }
+                if (angle == 180) { dx = w - 1 - x; dy = h - 1 - y; }
+                if (angle == 270) { dx = y; dy = w - 1 - x; }
+                for (int channel = 0; channel < 3; ++channel) {
+                    rgb[(dy * out_width + dx) * 3 + channel] = lut[source[(y * w + x) * 3 + channel]];
+                }
+            }
+            dl::image::img_t input{};
+            input.data = rgb; input.width = out_width; input.height = out_height;
+            input.pix_type = dl::image::DL_IMAGE_PIX_TYPE_RGB888;
+            const int64_t started = esp_timer_get_time();
+            const auto &results = detect.run(input);
+            ESP_LOGI(Tag, "FIXTURE label=%s exponent=%.2f rotation=%d hands=%u preprocess_ms=%.1f infer_ms=%.1f",
+                     label, double(exponent), angle, unsigned(results.size()),
+                     (started - preprocess_started) / 1000.0, (esp_timer_get_time() - started) / 1000.0);
+            for (const auto &r : results) {
+                ESP_LOGI(Tag, "FIXTURE_BOX label=%s exponent=%.2f rotation=%d score=%.4f x1=%d y1=%d x2=%d y2=%d",
+                         label, double(exponent), angle, double(r.score), r.box[0], r.box[1], r.box[2], r.box[3]);
+            }
         }
     }
 }
@@ -123,7 +139,10 @@ extern "C" void app_main() {
              (esp_timer_get_time() - smoke_start) / 1000.0);
     memory("model_loaded");
 #ifdef HAND_EVAL_FIXTURE
-    compare_rotations(detect, rgb);
+    compare_fixture(detect, rgb, hand_fixture, "palm");
+#ifdef HAND_EVAL_BACKGROUND
+    compare_fixture(detect, rgb, background_fixture, "background");
+#endif
 #endif
     const esp_err_t result = start_camera();
     if (result != ESP_OK) {
