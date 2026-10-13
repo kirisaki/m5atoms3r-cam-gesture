@@ -9,3 +9,6 @@ build/
 .agents/
 .codex/
 .aws/
+managed_components/
+sdkconfig
+sdkconfig.old

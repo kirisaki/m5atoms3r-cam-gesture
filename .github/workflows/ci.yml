@@ -17,7 +17,20 @@ jobs:
       - name: Test
         run: ctest --test-dir build/host --output-on-failure
       - name: Check recording tool syntax
-        run: python3 -m py_compile tools/record.py
+        run: python3 -m py_compile tools/record.py tools/record_hands.py tools/snapshot_hand.py
+
+  hand-detect-eval:
+    runs-on: ubuntu-24.04
+    container: espressif/idf:v5.5.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build hand detection evaluation
+        shell: bash
+        working-directory: experiments/hand-detect
+        run: |
+          . /opt/esp/idf/export.sh
+          idf.py set-target esp32s3
+          idf.py build
 
   firmware:
     runs-on: ubuntu-24.04
