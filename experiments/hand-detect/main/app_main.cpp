@@ -56,7 +56,7 @@ void memory(const char *stage) {
              unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)));
 }
 
-void snapshot(const uint8_t *rgb, uint32_t sequence, bool rotated) {
+void snapshot(const uint8_t *rgb, uint32_t sequence, bool rotated, bool paced = true) {
     // Text framing avoids CDC newline conversion corrupting binary pixels.
     constexpr char hex[] = "0123456789abcdef";
     char row[Height * 3 * 2 + 1];
@@ -69,9 +69,70 @@ void snapshot(const uint8_t *rgb, uint32_t sequence, bool rotated) {
         }
         row[Height * 3 * 2] = '\0';
         printf("HAND_IMAGE_ROW %d %s\n", y, row);
-        vTaskDelay(1);
+        if (paced || y % 32 == 31) vTaskDelay(1);
     }
     printf("HAND_IMAGE_END seq=%lu\n", (unsigned long)sequence);
+}
+
+void convert_rgb(const uint8_t *source, uint8_t *rgb, bool rotated) {
+    // RGB565 big-endian; identical conversion for live and saved frames.
+    for (int y = 0; y < Height; ++y) for (int x = 0; x < Width; ++x) {
+        const size_t src = (y * Width + x) * 2;
+        const uint16_t pixel = (uint16_t(source[src]) << 8) | source[src + 1];
+        const size_t dst = (rotated ? (Width - 1 - x) * Height + y :
+                                     x * Height + Height - 1 - y) * 3;
+        rgb[dst] = ((pixel >> 11) & 31) * 255 / 31;
+        rgb[dst + 1] = ((pixel >> 5) & 63) * 255 / 63;
+        rgb[dst + 2] = (pixel & 31) * 255 / 31;
+    }
+}
+
+void burst(HandDetect &detect, uint8_t *rgb, bool rotated) {
+    constexpr size_t Count = 40, FrameBytes = Width * Height * 2;
+    auto *frames = static_cast<uint8_t *>(heap_caps_malloc(Count * FrameBytes, MALLOC_CAP_SPIRAM));
+    if (!frames) { printf("BURST_ERROR reason=allocation\n"); return; }
+    int64_t timestamps[Count]{};
+    size_t count = 0;
+    unsigned failures = 0;
+    // Discard the queued live frame, which may predate the trigger.
+    camera_fb_t *stale = esp_camera_fb_get();
+    if (stale) esp_camera_fb_return(stale);
+    printf("BURST_BEGIN capacity=%u rotation=%d\n", unsigned(Count), rotated ? 270 : 90);
+    fflush(stdout);
+    const int64_t started = esp_timer_get_time();
+    while (count < Count && esp_timer_get_time() - started < 8000000) {
+        camera_fb_t *fb = esp_camera_fb_get();
+        if (!fb) { ++failures; vTaskDelay(1); continue; }
+        const int64_t timestamp = int64_t(fb->timestamp.tv_sec) * 1000000 + fb->timestamp.tv_usec;
+        if (fb->format == PIXFORMAT_RGB565 && fb->width == Width && fb->height == Height &&
+            fb->len == FrameBytes && timestamp >= started && (!count || timestamp > timestamps[count - 1])) {
+            std::memcpy(frames + count * FrameBytes, fb->buf, FrameBytes);
+            timestamps[count++] = timestamp;
+        } else { ++failures; }
+        esp_camera_fb_return(fb);
+        vTaskDelay(1);
+    }
+    printf("BURST_CAPTURED frames=%u failures=%u elapsed_ms=%.1f\n", unsigned(count), failures,
+           (esp_timer_get_time() - started) / 1000.0);
+    for (size_t i = 0; i < count; ++i) {
+        convert_rgb(frames + i * FrameBytes, rgb, rotated);
+        dl::image::img_t input{};
+        input.data = rgb; input.width = Height; input.height = Width;
+        input.pix_type = dl::image::DL_IMAGE_PIX_TYPE_RGB888;
+        const int64_t inference_started = esp_timer_get_time();
+        const auto &results = detect.run(input);
+        printf("BURST_FRAME seq=%u capture_ms=%.1f hands=%u infer_ms=%.1f\n", unsigned(i + 1),
+               (timestamps[i] - started) / 1000.0, unsigned(results.size()),
+               (esp_timer_get_time() - inference_started) / 1000.0);
+        for (const auto &r : results) {
+            printf("BURST_BOX seq=%u score=%.4f x1=%d y1=%d x2=%d y2=%d\n", unsigned(i + 1),
+                   double(r.score), r.box[0], r.box[1], r.box[2], r.box[3]);
+        }
+        snapshot(rgb, i + 1, rotated, false);
+    }
+    heap_caps_free(frames);
+    printf("BURST_END frames=%u\n", unsigned(count));
+    memory("burst_done");
 }
 
 #ifdef HAND_EVAL_FIXTURE
@@ -123,7 +184,7 @@ extern "C" void app_main() {
     usb_serial_jtag_vfs_use_driver();
     fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK);
     ESP_LOGI(Tag, "Hand detection evaluation; HID=OFF I2C=OFF; RGB565 QVGA -> RGB888 CW270");
-    ESP_LOGI(Tag, "Commands: s=snapshot r=toggle CW90/CW270 (resets to CW270 on reboot)");
+    ESP_LOGI(Tag, "Commands: s=snapshot b=burst r=toggle CW90/CW270 (resets to CW270 on reboot)");
     memory("boot");
     auto *rgb = static_cast<uint8_t *>(heap_caps_malloc(Width * Height * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (!rgb) { ESP_LOGE(Tag, "RGB buffer allocation failed"); return; }
@@ -169,6 +230,10 @@ extern "C" void app_main() {
             rotated = !rotated;
             ESP_LOGI(Tag, "INPUT rotation=%d", rotated ? 270 : 90);
         }
+        if (command == 'b') {
+            burst(detect, rgb, rotated);
+            continue;
+        }
         const int64_t start = esp_timer_get_time();
         camera_fb_t *fb = esp_camera_fb_get();
         if (!fb) { ++failures; ESP_LOGE(Tag, "Capture failed count=%lu", (unsigned long)failures); vTaskDelay(pdMS_TO_TICKS(100)); continue; }
@@ -183,17 +248,7 @@ extern "C" void app_main() {
         }
         previous_timestamp = timestamp;
         const int64_t captured = esp_timer_get_time();
-        // Camera bytes are RGB565 big-endian. Input orientation is independent
-        // of gesture direction mapping; no gestures are emitted by this firmware.
-        for (int y = 0; y < Height; ++y) for (int x = 0; x < Width; ++x) {
-            const size_t src = (y * Width + x) * 2;
-            const uint16_t pixel = (uint16_t(fb->buf[src]) << 8) | fb->buf[src + 1];
-            const size_t dst = (rotated ? (Width - 1 - x) * Height + y :
-                                         x * Height + Height - 1 - y) * 3;
-            rgb[dst] = ((pixel >> 11) & 31) * 255 / 31;
-            rgb[dst + 1] = ((pixel >> 5) & 63) * 255 / 63;
-            rgb[dst + 2] = (pixel & 31) * 255 / 31;
-        }
+        convert_rgb(fb->buf, rgb, rotated);
         esp_camera_fb_return(fb);
         const int64_t converted = esp_timer_get_time();
         const auto &hands = detect.run(image);

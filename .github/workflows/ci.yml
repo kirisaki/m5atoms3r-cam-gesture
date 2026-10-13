@@ -17,7 +17,9 @@ jobs:
       - name: Test
         run: ctest --test-dir build/host --output-on-failure
       - name: Check recording tool syntax
-        run: python3 -m py_compile tools/record.py tools/record_hands.py tools/snapshot_hand.py
+        run: python3 -m py_compile tools/record.py tools/record_hands.py tools/snapshot_hand.py tools/burst_hands.py
+      - name: Test burst recording validation
+        run: python3 -m unittest discover -s tools -p 'test_burst_hands.py'
 
   hand-detect-eval:
     runs-on: ubuntu-24.04
