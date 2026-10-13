@@ -1,0 +1,33 @@
+cmake_minimum_required(VERSION 3.16)
+project(atoms3r_gesture_host LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+option(ENABLE_SANITIZERS "Run host tools/tests with ASan and UBSan" OFF)
+
+add_library(gesture_host INTERFACE)
+target_include_directories(gesture_host INTERFACE include)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(gesture_host INTERFACE -Wall -Wextra -Werror)
+    if(ENABLE_SANITIZERS)
+        target_compile_options(gesture_host INTERFACE -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(gesture_host INTERFACE -fsanitize=address,undefined)
+    endif()
+endif()
+
+enable_testing()
+foreach(name gesture_detector gesture_protocol hid_shortcut)
+    add_executable(${name}_test test/${name}_test.cpp)
+    target_link_libraries(${name}_test PRIVATE gesture_host)
+    # Tests use assert: keep assertions even in Release/RelWithDebInfo builds.
+    if(MSVC)
+        target_compile_options(${name}_test PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(${name}_test PRIVATE -UNDEBUG)
+    endif()
+    add_test(NAME ${name} COMMAND ${name}_test)
+endforeach()
+
+add_executable(gesture_replay tools/replay.cpp)
+target_link_libraries(gesture_replay PRIVATE gesture_host)

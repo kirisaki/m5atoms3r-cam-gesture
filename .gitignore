@@ -1,0 +1,11 @@
+.pio/
+recordings/
+__pycache__/
+build/
+*.py[cod]
+.venv/
+.env
+.env.*
+.agents/
+.codex/
+.aws/
