@@ -1,6 +1,10 @@
 #pragma once
 #include <cstdint>
 
+#ifndef GESTURE_MIN_SPEED_PPS
+#define GESTURE_MIN_SPEED_PPS 10
+#endif
+
 // Defaults verified with the current mounting and recorded swipes.
 // Pixel distances below refer to the downsampled image, not the camera frame.
 namespace GestureConfig {
@@ -39,7 +43,8 @@ constexpr int CalibrationFrames = 25;
 constexpr uint32_t MaxFrameGapMs = 250;
 constexpr int MinInliers = 3;
 constexpr float MinFrameMotion = 0.6f;
-constexpr int MinSpeedPixelsPerSecond = 10;
+constexpr int MinSpeedPixelsPerSecond = GESTURE_MIN_SPEED_PPS;
+static_assert(MinSpeedPixelsPerSecond > 0, "Minimum flow speed must be positive");
 // Compensate the slant observed in left swipes at the current mounting.
 // Angle is measured from the selected, aspect-corrected image axis toward across.
 constexpr float AxisTiltDegrees = -10.0f;

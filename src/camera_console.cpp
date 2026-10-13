@@ -26,9 +26,11 @@ void CameraApp::status() {
     Serial.printf("# gesture_axis_tilt=%.1f deg dominance=%.1f cross_limit=%.2f fast_gap_ms=%lu\n",
                   GestureConfig::Detection::AxisTiltDegrees, GestureConfig::Detection::AxisDominance,
                   GestureConfig::Detection::MaxCrossTravelRatio, GestureConfig::Detection::FastMaxFrameGapMs);
+    Serial.printf("# min_speed_pps=%d\n", GestureConfig::Detection::MinSpeedPixelsPerSecond);
     Serial.println("# Commands: i/h=info b=reset flow a=axis m=reverse d=debug p=pause/resume v=image trace");
     Serial.println("# HID: 0=off 1=on [=test Alt+Left ]=test Alt+Right");
     Serial.println("# USB: u=enter firmware download mode (stops camera until restart/upload)");
+    Serial.println("# Measurement: r=start (HID off) s=stop c=right display cue (no key)");
     Serial.println("# Events: ALT_LEFT / ALT_RIGHT (serial + I2C + USB keyboard)");
     gestureBus.printStatus();
     gestureHid.printStatus();
@@ -60,6 +62,27 @@ void CameraApp::reportDetection(uint32_t now) {
 void CameraApp::handleCommands() {
     while (Serial.available()) {
         switch (Serial.read()) {
+            case 'r':
+                gestureHid.setEnabled(false);
+                enabled = true;
+                diagnostics = false;
+                measurement = imageTrace = true;
+                calibrate();
+                Serial.println("# MEASUREMENT START");
+                Serial.printf("# min_speed_pps=%d\n", GestureConfig::Detection::MinSpeedPixelsPerSecond);
+                break;
+            case 's':
+                measurement = imageTrace = false;
+                Serial.println("# MEASUREMENT STOP");
+                break;
+            case 'c':
+                if (measurement && latest.state == GestureDetector::State::Ready) {
+                    const uint32_t now = millis();
+                    gestureBus.emit(GestureProtocol::Direction::Right, now);
+                    publishStatus();
+                    Serial.printf("# TRIAL_CUE RIGHT ms=%lu ack=%d\n", now, gestureBus.acknowledged());
+                } else Serial.println("# TRIAL_CUE NOT_READY");
+                break;
             case '0': gestureHid.setEnabled(false); break;
             case '1': gestureHid.setEnabled(true); break;
             case '[': gestureHid.emit(false); break;

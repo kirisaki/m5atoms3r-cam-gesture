@@ -81,5 +81,44 @@ python3 -c 'import json; rows=map(json.loads,open("recordings/swipe.jsonl")); [p
 ```
 
 `record.py` はHIDを停止して記録し、終了後も停止したままです。通常操作へ戻す際は `1` を送ってください。
+
+### 速度と日常動作の比較
+
+`atoms3r-cam-measure` は起動時からHIDを無効に固定する計測用環境です。
+`1` や手動キーテストでも入力しません。通常版の認識設定は共通です。
+
+```bash
+pio run -e atoms3r-cam-measure -t upload --upload-port /dev/ttyACM0
+uv run --with pyserial python tools/measure_flow.py --port /dev/ttyACM0 --seconds 25 --label right-five --out recordings/flow-right-five-01.jsonl
+```
+
+撮影開始前に準備を確認してから実行します。開始時は手を出さず静止し、
+校正完了かつ開始から5秒以上経過すると、ディスプレイの右矢印が緑色になります。
+これを合図に操作します。合図はI2C表示だけで、認識イベントやキー入力には数えません。
+表示側のCountには合図も1回含まれるため、評価は記録のALT_LEFT/ALT_RIGHTで行います。
+I2C応答を確認できない場合は中止します。
+
+`r` はHID停止・校正・画像と毎フレームのフロー記録を開始し、`s` は記録を停止します。
+どちらも繰り返し送れます。`c` は計測中かつREADY状態で右矢印の合図を送ります。
+ツール終了後もHIDは停止したままです。
+
+JSONLには画像、実機のフロー、ログを保存します。`flow.speed` は主軸フローの絶対値を
+処理に渡したフレーム時刻の間隔で割った値（画素相当/秒）で、実空間の速度ではありません。
+40×30の縮小画像で縦横比と軸の傾きを補正した値です。取得遅延やフローの探索範囲にも
+影響されるため、速い動きほど常に大きい値になるとは限りません。
+再生CSVも従来の8列にフレーム間隔（ms）と全体移動フラグを追加しています。
+まず左右スワイプと通過・飲み物を取る動作を別々に記録して比較します。
+
+`atoms3r-cam-fast` は同じ計測版に最低速度40画素相当/秒を適用する候補です。
+こちらもHIDは無効に固定されます。通常版と `atoms3r-cam-measure` は従来の10です。
+`i` または記録開始時の `min_speed_pps` で設定を確認できます。
+ホストの `gesture_replay_fast` も40で再生し、通常の `gesture_replay` と比較できます。
+
+```bash
+pio run -e atoms3r-cam-fast -t upload --upload-port /dev/ttyACM0
+```
+
+通常のUSB動作から書き込む場合は、先にシリアルで `0u` を送って書き込みモードに入り、
+USBをWSLへ再接続します。詳細は [USBの手順](usb.md) を参照してください。
 カメラポートのDTRは有効にします。画像出力・診断はオフの状態から記録を始めてください。
 `recordings/` はGit管理対象外です。

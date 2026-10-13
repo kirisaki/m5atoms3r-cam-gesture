@@ -10,6 +10,7 @@ public:
     void update(GestureProtocol::State state, GestureProtocol::Error error,
                 uint8_t flags, uint32_t failures, uint32_t now);
     void printStatus() const;
+    bool acknowledged() const { return attempted_ && lastResult_ == 0; }
 private:
     // The bundled camera driver uses I2C controller 1 for SCCB.
     TwoWire bus_{0};

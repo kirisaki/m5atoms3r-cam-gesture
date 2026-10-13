@@ -21,7 +21,12 @@ class GestureHid {
     HidShortcut<Transport> shortcut_{transport_};
     uint32_t sent_ = 0, skipped_ = 0;
 public:
-    void begin() { keyboard_.begin(); USB.begin(); }
+    void begin() {
+#if GESTURE_MEASUREMENT_ONLY
+        shortcut_.setEnabled(false, millis());
+#endif
+        keyboard_.begin(); USB.begin();
+    }
     void poll() { shortcut_.poll(millis()); }
     bool busy() { return shortcut_.busy(); }
     void emit(bool right) {
@@ -30,6 +35,9 @@ public:
         Serial.printf("# HID %s %s\n", right ? "ALT_RIGHT" : "ALT_LEFT", sent ? "SENT" : "SKIPPED");
     }
     void setEnabled(bool enabled) {
+#if GESTURE_MEASUREMENT_ONLY
+        enabled = false;
+#endif
         shortcut_.setEnabled(enabled, millis());
         Serial.printf("# hid_enabled=%d\n", shortcut_.enabled());
     }

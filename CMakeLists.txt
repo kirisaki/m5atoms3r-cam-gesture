@@ -31,3 +31,17 @@ endforeach()
 
 add_executable(gesture_replay tools/replay.cpp)
 target_link_libraries(gesture_replay PRIVATE gesture_host)
+
+add_executable(gesture_replay_fast tools/replay.cpp)
+target_link_libraries(gesture_replay_fast PRIVATE gesture_host)
+target_compile_definitions(gesture_replay_fast PRIVATE GESTURE_MIN_SPEED_PPS=40)
+
+add_executable(fast_filter_test test/fast_filter_test.cpp)
+target_link_libraries(fast_filter_test PRIVATE gesture_host)
+target_compile_definitions(fast_filter_test PRIVATE GESTURE_MIN_SPEED_PPS=40)
+if(MSVC)
+    target_compile_options(fast_filter_test PRIVATE /UNDEBUG)
+else()
+    target_compile_options(fast_filter_test PRIVATE -UNDEBUG)
+endif()
+add_test(NAME fast_filter COMMAND fast_filter_test)

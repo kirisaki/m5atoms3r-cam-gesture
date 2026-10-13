@@ -6,6 +6,7 @@ using namespace GestureConfig::Runtime;
 void CameraApp::calibrate() {
     detector.setVerticalAxis(verticalAxis);
     latest = {};
+    previousFlowMs = 0;
     warmupStarted = millis();
     camera.resetHistory();
     lastGoodFrame = millis();
@@ -65,6 +66,14 @@ void CameraApp::capture() {
     const uint32_t flowStart = millis();
     latest = detector.process(gray, now);
     lastProcessingMs = millis() - flowStart;
+    if (measurement) {
+        Serial.printf("# FLOW %lu %lu %.3f %.3f %d %d %d %.3f %d\n",
+                      now, previousFlowMs ? now - previousFlowMs : 0,
+                      latest.alongFlow, latest.acrossFlow, latest.inliers,
+                      latest.movingPatches, latest.globalMotion, latest.travel,
+                      static_cast<int>(latest.state));
+    }
+    previousFlowMs = now;
     if (calibrating && latest.state == GestureDetector::State::Ready) {
         Serial.println("# READY: swipe horizontally, then pause briefly before the next swipe.");
     }

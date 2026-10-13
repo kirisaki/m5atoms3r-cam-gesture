@@ -17,7 +17,7 @@ jobs:
       - name: Test
         run: ctest --test-dir build/host --output-on-failure
       - name: Check recording tool syntax
-        run: python3 -m py_compile tools/record.py tools/record_hands.py tools/snapshot_hand.py tools/burst_hands.py
+        run: python3 -m py_compile tools/record.py tools/record_hands.py tools/snapshot_hand.py tools/burst_hands.py tools/measure_flow.py
       - name: Test burst recording validation
         run: python3 -m unittest discover -s tools -p 'test_burst_hands.py'
 
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        environment: [atoms3r-cam, atoms3r-receiver]
+        environment: [atoms3r-cam, atoms3r-cam-measure, atoms3r-cam-fast, atoms3r-receiver]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

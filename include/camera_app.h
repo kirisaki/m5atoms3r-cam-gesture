@@ -24,6 +24,8 @@ private:
     bool mirror = GestureConfig::Runtime::Mirror;
     bool verticalAxis = GestureConfig::Runtime::VerticalAxis;  // Verified against recorded right/left swipes in this mounting.
     bool imageTrace = false;
+    bool measurement = false;
+    uint32_t previousFlowMs = 0;
     uint32_t lastImage = 0;
     uint32_t frames = 0, events = 0, failures = 0;
     uint32_t lastCapture = 0, lastDiagnostic = 0, warmupStarted = 0;

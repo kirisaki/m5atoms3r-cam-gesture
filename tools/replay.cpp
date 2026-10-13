@@ -8,6 +8,8 @@ int main(int argc, char **argv) {
     GestureDetector detector;
     detector.setVerticalAxis(argc > 1 && std::string(argv[1]) == "y");
     uint32_t now;
+    uint32_t previous = 0;
+    bool havePrevious = false;
     std::string hex;
     uint8_t image[GestureDetector::Pixels];
     while (std::cin >> now >> hex) {
@@ -26,6 +28,10 @@ int main(int argc, char **argv) {
         const char *command = gestureCommand(result.direction, true);
         std::cout << now << ',' << static_cast<int>(result.state) << ',' << result.inliers
                   << ',' << result.movingPatches << ',' << result.alongFlow << ',' << result.acrossFlow
-                  << ',' << result.travel << ',' << (command ? command : "") << '\n';
+                  << ',' << result.travel << ',' << (command ? command : "")
+                  << ',' << (havePrevious ? now - previous : 0)
+                  << ',' << result.globalMotion << '\n';
+        previous = now;
+        havePrevious = true;
     }
 }
