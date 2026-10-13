@@ -15,6 +15,7 @@ def receive(port, out):
     current = None
     rows = None
     captured = None
+    settings = None
     with (out / 'events.jsonl').open('x') as log:
         while time.monotonic() < deadline:
             line = port.readline().decode('ascii', errors='replace').strip()
@@ -35,6 +36,7 @@ def receive(port, out):
             if line.startswith('BURST_ERROR '):
                 raise RuntimeError(line)
             if line.startswith('BURST_BEGIN '):
+                settings = fields(line)
                 print(line, flush=True)
             elif line.startswith('BURST_CAPTURED '):
                 captured = fields(line)
@@ -74,11 +76,11 @@ def receive(port, out):
                 current = rows = None
             elif line.startswith('BURST_END '):
                 count = int(fields(line)['frames'])
-                if captured is None or count != int(captured['frames']) or count != len(frames) or current is not None:
+                if settings is None or captured is None or count != int(captured['frames']) or count != len(frames) or current is not None:
                     raise RuntimeError('Burst count mismatch')
                 if not frames:
                     raise RuntimeError('No burst frames captured')
-                (out / 'manifest.json').write_text(json.dumps({'capture': captured, 'frames': frames}, indent=2) + '\n')
+                (out / 'manifest.json').write_text(json.dumps({'settings': settings, 'capture': captured, 'frames': frames}, indent=2) + '\n')
                 print(f'Completed {len(frames)} frames in {out}', flush=True)
                 return
         raise RuntimeError(f'Burst timed out after {len(frames)} images')
@@ -91,6 +93,7 @@ def main():
     parser.add_argument('--port', required=True)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--trigger-file', type=Path, help='Wait for this new file after ARMED (up to 5 minutes)')
+    parser.add_argument('--exposure', choices=['auto', 'quarter'], default='auto')
     args = parser.parse_args()
     if args.out.exists():
         parser.error('--out must be a new directory')
@@ -105,7 +108,7 @@ def main():
         started = time.monotonic()
         while time.monotonic() - started < 25:
             line = port.readline()
-            if b'capture_display:' in line:
+            if b'capture_display:' in line or line.startswith(b'EXPOSURE '):
                 print(line.decode('ascii', errors='replace').strip(), flush=True)
             if line.startswith(b'HAND_FRAME ') and time.monotonic() - started >= 5:
                 break
@@ -117,9 +120,11 @@ def main():
             while not args.trigger_file.exists():
                 if time.monotonic() >= deadline:
                     raise RuntimeError('Trigger timed out')
-                port.readline()  # Keep draining live logs while waiting.
+                line = port.readline()  # Keep draining live logs while waiting.
+                if b'capture_display:' in line:
+                    print(line.decode('ascii', errors='replace').strip(), flush=True)
         port.reset_input_buffer()
-        port.write(b'b')
+        port.write(b'B' if args.exposure == 'quarter' else b'b')
         port.flush()
         receive(port, args.out)
     finally:

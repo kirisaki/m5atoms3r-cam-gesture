@@ -14,6 +14,7 @@
 #include "freertos/task.h"
 #include "hand_detect.hpp"
 #include "capture_display.h"
+#include "capture_exposure.h"
 
 #ifdef HAND_EVAL_FIXTURE
 extern const uint8_t hand_fixture[] asm("_binary_hand_fixture_start");
@@ -92,23 +93,41 @@ void convert_rgb(const uint8_t *source, uint8_t *rgb, bool rotated) {
     }
 }
 
-void burst(HandDetect &detect, uint8_t *rgb, bool rotated) {
+void burst(HandDetect &detect, uint8_t *rgb, bool rotated, bool shortExposure) {
     constexpr size_t Count = 40, FrameBytes = Width * Height * 2;
     auto *frames = static_cast<uint8_t *>(heap_caps_malloc(Count * FrameBytes, MALLOC_CAP_SPIRAM));
     if (!frames) { printf("BURST_ERROR reason=allocation\n"); return; }
+    CaptureExposure exposure;
+    if (!exposure.report("before_burst") || (shortExposure && !exposure.shorten())) {
+        exposure.restore();
+        heap_caps_free(frames);
+        printf("BURST_ERROR reason=exposure_setup\n");
+        return;
+    }
     int64_t timestamps[Count]{};
     size_t count = 0;
     unsigned failures = 0;
     // Discard the queued live frame, which may predate the trigger.
-    camera_fb_t *stale = esp_camera_fb_get();
-    if (stale) esp_camera_fb_return(stale);
+    for (int i = 0; i < (shortExposure ? 4 : 1); ++i) {
+        camera_fb_t *stale = esp_camera_fb_get();
+        if (stale) esp_camera_fb_return(stale);
+        display.tick();
+    }
+    if (!exposure.captureReady()) {
+        exposure.restore();
+        heap_caps_free(frames);
+        printf("BURST_ERROR reason=exposure_readback\n");
+        return;
+    }
     const int64_t started = esp_timer_get_time();
     if (!display.start()) {
+        exposure.restore();
         heap_caps_free(frames);
         printf("BURST_ERROR reason=display_no_ack\n");
         return;
     }
-    printf("BURST_BEGIN capacity=%u rotation=%d\n", unsigned(Count), rotated ? 270 : 90);
+    printf("BURST_BEGIN capacity=%u rotation=%d exposure=%s exposure_lines=%d aec=%d\n",
+           unsigned(Count), rotated ? 270 : 90, shortExposure ? "quarter" : "auto", exposure.lines(), exposure.aec());
     fflush(stdout);
     while (count < Count && esp_timer_get_time() - started < 8000000) {
         camera_fb_t *fb = esp_camera_fb_get();
@@ -116,8 +135,11 @@ void burst(HandDetect &detect, uint8_t *rgb, bool rotated) {
         const int64_t timestamp = int64_t(fb->timestamp.tv_sec) * 1000000 + fb->timestamp.tv_usec;
         if (fb->format == PIXFORMAT_RGB565 && fb->width == Width && fb->height == Height &&
             fb->len == FrameBytes && timestamp >= started && (!count || timestamp > timestamps[count - 1])) {
-            std::memcpy(frames + count * FrameBytes, fb->buf, FrameBytes);
-            timestamps[count++] = timestamp;
+            // Keep a four-second response window even if shorter exposure raises FPS.
+            if (timestamp >= started + int64_t(count) * 100000) {
+                std::memcpy(frames + count * FrameBytes, fb->buf, FrameBytes);
+                timestamps[count++] = timestamp;
+            }
         } else { ++failures; }
         esp_camera_fb_return(fb);
         display.tick();
@@ -126,6 +148,11 @@ void burst(HandDetect &detect, uint8_t *rgb, bool rotated) {
     display.transferring();
     printf("BURST_CAPTURED frames=%u failures=%u elapsed_ms=%.1f\n", unsigned(count), failures,
            (esp_timer_get_time() - started) / 1000.0);
+    if (!exposure.restore()) {
+        heap_caps_free(frames);
+        printf("BURST_ERROR reason=exposure_restore\n");
+        return;
+    }
     for (size_t i = 0; i < count; ++i) {
         convert_rgb(frames + i * FrameBytes, rgb, rotated);
         dl::image::img_t input{};
@@ -197,7 +224,7 @@ extern "C" void app_main() {
     usb_serial_jtag_vfs_use_driver();
     fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK);
     ESP_LOGI(Tag, "Hand detection evaluation; HID=OFF I2C=capture-cue; RGB565 QVGA -> RGB888 CW270");
-    ESP_LOGI(Tag, "Commands: s=snapshot b=burst r=toggle CW90/CW270 (resets to CW270 on reboot)");
+    ESP_LOGI(Tag, "Commands: s=snapshot b=burst(auto) B=burst(quarter exposure) e=exposure-check r=toggle CW90/CW270");
     memory("boot");
     auto *rgb = static_cast<uint8_t *>(heap_caps_malloc(Width * Height * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (!rgb) { ESP_LOGE(Tag, "RGB buffer allocation failed"); return; }
@@ -233,6 +260,7 @@ extern "C" void app_main() {
     }
     memory("camera_ready");
     display.begin();
+    CaptureExposure{}.report("camera_ready");
     ESP_LOGI(Tag, "READY: boxes use rotated image coordinates, width=240 height=320");
     uint32_t sequence = 0, failures = 0;
     bool rotated = true; // Presenting fingers downward needs the opposite input orientation.
@@ -245,8 +273,15 @@ extern "C" void app_main() {
             rotated = !rotated;
             ESP_LOGI(Tag, "INPUT rotation=%d", rotated ? 270 : 90);
         }
-        if (command == 'b') {
-            burst(detect, rgb, rotated);
+        if (command == 'b' || command == 'B') {
+            burst(detect, rgb, rotated, command == 'B');
+            continue;
+        }
+        if (command == 'e') {
+            CaptureExposure exposure;
+            const bool shortened = exposure.shorten();
+            const bool restored = exposure.restore();
+            printf("EXPOSURE_CHECK shortened=%d restored=%d\n", shortened, restored);
             continue;
         }
         const int64_t start = esp_timer_get_time();

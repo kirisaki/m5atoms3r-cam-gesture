@@ -4,6 +4,8 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "gesture_protocol.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 // Uses the existing receiver firmware. A fresh green RIGHT arrow is a capture
 // cue, not a detected gesture. The receiver's Count therefore counts cues here.
@@ -41,8 +43,13 @@ public:
         frame_.state = GestureProtocol::State::Tracking;
         frame_.direction = GestureProtocol::Direction::Right;
         ++frame_.eventSequence;
-        frame_.eventMs = esp_timer_get_time() / 1000;
-        if (send()) return true;
+        // A transient NACK must not lose the one capture cue. Reuse the event
+        // sequence so the receiver deduplicates any already accepted packet.
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            frame_.eventMs = esp_timer_get_time() / 1000;
+            if (send()) return true;
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
         // Do not replay a failed cue in a later heartbeat.
         frame_.direction = GestureProtocol::Direction::None;
         frame_.state = GestureProtocol::State::Ready;
