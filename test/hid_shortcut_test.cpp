@@ -50,5 +50,31 @@ int main() {
     output.poll(701); assert(output.busy()); // Failed releases must be retried.
     t.succeed = true; output.poll(702);
     assert(neutral(t.reports.back()) && !output.busy());
+    // Profile replacement during a held key must release it before the new key.
+    output.configure({1, 43}, {2, 43}, true, 800);
+    assert(output.managed() && output.leaseActive());
+    assert(output.trigger(false, 801));
+    assert(t.reports.back()[0] == 1 && t.reports.back()[2] == 43);
+    output.configure({0, 0}, {4, 82}, true, 802);
+    assert(neutral(t.reports.back()));
+    assert(!output.trigger(false, 803));
+    assert(output.trigger(true, 804));
+    assert(t.reports.back()[0] == 4 && t.reports.back()[2] == 82);
+    assert(output.keepAlive(2000));
+    output.poll(3999); assert(output.enabled());
+    output.poll(4000); assert(!output.enabled() && !output.leaseActive());
+    assert(!output.keepAlive(4001) && !output.trigger(true, 4002));
+    output.configure({4, 80}, {4, 79}, true, UINT32_MAX - 999);
+    assert(output.trigger(false, 950)); // Hold spans lease expiry and timer wrap.
+    output.poll(1000);
+    assert(!output.enabled() && neutral(t.reports.back()));
+    output.configure({4, 80}, {4, 79}, false, 2000);
+    assert(output.keepAlive(2500) && !output.enabled());
+    output.stop(2501);
+    assert(!output.keepAlive(2502) && output.managed());
+    output.standalone(3000);
+    assert(!output.managed() && output.enabled());
+    assert(output.trigger(false, 9000));
+    assert(t.reports.back()[0] == 4 && t.reports.back()[2] == 80);
     puts("HID shortcut tests passed");
 }

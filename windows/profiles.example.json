@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "default": {
+    "enabled": true,
+    "left": "Alt+Left",
+    "right": "Alt+Right"
+  },
+  "applications": [
+    {
+      "executable": "notepad.exe",
+      "enabled": true,
+      "left": "Left",
+      "right": "Right"
+    },
+    {
+      "executable": "mspaint.exe",
+      "enabled": false,
+      "left": "None",
+      "right": "None"
+    }
+  ]
+}

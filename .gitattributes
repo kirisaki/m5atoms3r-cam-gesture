@@ -1,0 +1,2 @@
+# Keep Windows-generated NuGet lock files consistent in Git.
+windows/**/packages.lock.json text eol=lf

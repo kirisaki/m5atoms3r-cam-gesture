@@ -15,6 +15,7 @@ private:
     GestureDetector detector;
     GestureI2c gestureBus;
     GestureHid gestureHid;
+    ShortcutProtocol::Framer shortcutFrames;
     GestureProtocol::Error captureError = GestureProtocol::Error::None;
     uint32_t lastGoodFrame = 0;
     uint8_t gray[GestureDetector::Pixels] = {};

@@ -22,6 +22,8 @@ public:
                   "Patch and search dimensions must be positive");
     static_assert(Width > 2 * PatchRadius && Height > 2 * PatchRadius,
                   "A patch must fit inside the image");
+    static_assert(Width - GestureConfig::Flow::MinX > 2 * PatchRadius,
+                  "A patch must fit inside the active region");
     struct Result {
         float x = 0, y = 0;
         int moving = 0, textured = 0, inliers = 0;
@@ -34,6 +36,7 @@ public:
         int vx[MaxPatches], vy[MaxPatches];
         for (int y = PatchRadius; y < Height - PatchRadius; y += PatchStep) {
             for (int x = PatchRadius; x < Width - PatchRadius; x += PatchStep) {
+                if (x - PatchRadius < MinX) continue;
                 int total = 0;
                 for (int j = -PatchRadius; j <= PatchRadius; ++j)
                     for (int i = -PatchRadius; i <= PatchRadius; ++i) total += current[(y+j)*Width+x+i];
@@ -52,7 +55,7 @@ public:
                 for (int dy = -SearchRadius; dy <= SearchRadius; ++dy) {
                     for (int dx = -SearchRadius; dx <= SearchRadius; ++dx) {
                         const int px = x - dx, py = y - dy;
-                        if (px < PatchRadius || px >= Width - PatchRadius || py < PatchRadius || py >= Height - PatchRadius) continue;
+                        if (px < MinX + PatchRadius || px >= Width - PatchRadius || py < PatchRadius || py >= Height - PatchRadius) continue;
                         const int error = cost(previous, current, px, py, x, y);
                         const int axis = (axisY ? dy : dx) + SearchRadius;
                         axisCost[axis] = std::min(axisCost[axis], error);

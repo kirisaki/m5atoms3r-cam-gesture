@@ -27,11 +27,14 @@ void CameraApp::status() {
                   GestureConfig::Detection::AxisTiltDegrees, GestureConfig::Detection::AxisDominance,
                   GestureConfig::Detection::MaxCrossTravelRatio, GestureConfig::Detection::FastMaxFrameGapMs);
     Serial.printf("# min_speed_pps=%d\n", GestureConfig::Detection::MinSpeedPixelsPerSecond);
+    Serial.printf("# flow_roi raw_x_min=%d bottom_crop_percent=%d upright_rotation=270\n",
+                  GestureConfig::Flow::MinX, GestureConfig::Flow::BottomCropPercent);
     Serial.println("# Commands: i/h=info b=reset flow a=axis m=reverse d=debug p=pause/resume v=image trace");
-    Serial.println("# HID: 0=off 1=on [=test Alt+Left ]=test Alt+Right");
+    Serial.println("# HID: 0=off 1=on (standalone only) [=test left ]=test right");
+    Serial.println("# Control: @G1 <id> GET/SET/KEEP/STOP/STANDALONE (LF terminated)");
     Serial.println("# USB: u=enter firmware download mode (stops camera until restart/upload)");
     Serial.println("# Measurement: r=start (HID off) s=stop c=right display cue (no key)");
-    Serial.println("# Events: ALT_LEFT / ALT_RIGHT (serial + I2C + USB keyboard)");
+    Serial.println("# Events: ALT_LEFT / ALT_RIGHT (legacy direction names; HID mapping may differ)");
     gestureBus.printStatus();
     gestureHid.printStatus();
 }
@@ -61,7 +64,17 @@ void CameraApp::reportDetection(uint32_t now) {
 
 void CameraApp::handleCommands() {
     while (Serial.available()) {
-        switch (Serial.read()) {
+        const char byte = static_cast<char>(Serial.read());
+        const auto result = shortcutFrames.feed(byte);
+        if (result == ShortcutProtocol::Framer::Result::Pending) continue;
+        if (result == ShortcutProtocol::Framer::Result::Complete) {
+            ShortcutProtocol::Request request;
+            const char *error = shortcutFrames.invalid() ? "FRAME" : ShortcutProtocol::parse(shortcutFrames.line(), request);
+            if (error) Serial.printf("@G1 %lu ERR %s\n", static_cast<unsigned long>(request.id), error);
+            else gestureHid.command(request, measurement);
+            continue;
+        }
+        switch (byte) {
             case 'r':
                 gestureHid.setEnabled(false);
                 enabled = true;
@@ -70,6 +83,8 @@ void CameraApp::handleCommands() {
                 calibrate();
                 Serial.println("# MEASUREMENT START");
                 Serial.printf("# min_speed_pps=%d\n", GestureConfig::Detection::MinSpeedPixelsPerSecond);
+                Serial.printf("# flow_roi raw_x_min=%d bottom_crop_percent=%d upright_rotation=270\n",
+                              GestureConfig::Flow::MinX, GestureConfig::Flow::BottomCropPercent);
                 break;
             case 's':
                 measurement = imageTrace = false;

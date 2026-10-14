@@ -4,6 +4,9 @@
 #ifndef GESTURE_MIN_SPEED_PPS
 #define GESTURE_MIN_SPEED_PPS 10
 #endif
+#ifndef GESTURE_BOTTOM_CROP_PERCENT
+#define GESTURE_BOTTOM_CROP_PERCENT 0
+#endif
 
 // Defaults verified with the current mounting and recorded swipes.
 // Pixel distances below refer to the downsampled image, not the camera frame.
@@ -13,6 +16,12 @@ constexpr int Width = 40;
 constexpr int Height = 30;
 }
 namespace Flow {
+// Current mounting is upright after a 270-degree clockwise image rotation:
+// upright y = raw width - 1 - raw x, so the bottom is the low-raw-x edge.
+// Restrict matching without rescaling images or changing speed units.
+constexpr int BottomCropPercent = GESTURE_BOTTOM_CROP_PERCENT;
+constexpr int MinX = Image::Width * BottomCropPercent / 100;
+static_assert(BottomCropPercent >= 0 && BottomCropPercent < 100, "Invalid bottom exclusion");
 constexpr int PatchRadius = 2;
 constexpr int PatchStep = 2;
 constexpr int SearchRadius = 6;

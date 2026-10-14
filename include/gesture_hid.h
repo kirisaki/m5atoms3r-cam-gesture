@@ -3,6 +3,7 @@
 #include <USB.h>
 #include <USBHIDKeyboard.h>
 #include "hid_shortcut.h"
+#include "shortcut_protocol.h"
 
 #if ARDUINO_USB_MODE
 #error Camera HID requires ARDUINO_USB_MODE=0 (USB OTG/TinyUSB)
@@ -32,14 +33,55 @@ public:
     void emit(bool right) {
         const bool sent = shortcut_.trigger(right, millis());
         if (sent) ++sent_; else ++skipped_;
-        Serial.printf("# HID %s %s\n", right ? "ALT_RIGHT" : "ALT_LEFT", sent ? "SENT" : "SKIPPED");
+        const auto key = shortcut_.binding(right);
+        Serial.printf("# HID %s %s modifiers=%u usage=%u\n", right ? "RIGHT" : "LEFT",
+                      sent ? "SENT" : "SKIPPED", key.modifiers, key.usage);
     }
     void setEnabled(bool enabled) {
 #if GESTURE_MEASUREMENT_ONLY
         enabled = false;
 #endif
-        shortcut_.setEnabled(enabled, millis());
+        // Legacy '1' must not bypass a managed session's lease or STOP.
+        if (enabled && shortcut_.managed()) {
+            Serial.println("# HID managed: use SET or STANDALONE");
+            return;
+        }
+        if (!enabled && shortcut_.managed()) shortcut_.stop(millis());
+        else shortcut_.setEnabled(enabled, millis());
         Serial.printf("# hid_enabled=%d\n", shortcut_.enabled());
+    }
+    void command(const ShortcutProtocol::Request &request, bool measurement) {
+        using ShortcutProtocol::Action;
+        const uint32_t now = millis();
+        shortcut_.poll(now);
+#if GESTURE_MEASUREMENT_ONLY
+        measurement = true;
+#endif
+        const char *error = nullptr;
+        switch (request.action) {
+            case Action::Get: break;
+            case Action::Set:
+                if (measurement) error = "MEASUREMENT";
+                else shortcut_.configure(request.left, request.right, request.enabled, now);
+                break;
+            case Action::Keep:
+                if (!shortcut_.keepAlive(now)) error = "EXPIRED";
+                break;
+            case Action::Stop: shortcut_.stop(now); break;
+            case Action::Standalone:
+                if (measurement) error = "MEASUREMENT";
+                else shortcut_.standalone(now);
+                break;
+        }
+        if (error) {
+            Serial.printf("@G1 %lu ERR %s\n", static_cast<unsigned long>(request.id), error);
+            return;
+        }
+        const auto left = shortcut_.binding(false), right = shortcut_.binding(true);
+        Serial.printf("@G1 %lu OK ATOMS3R_CAM %s %d %d %u %u %u %u\n",
+                      static_cast<unsigned long>(request.id), shortcut_.managed() ? "MANAGED" : "STANDALONE",
+                      shortcut_.enabled(), shortcut_.leaseActive(),
+                      left.modifiers, left.usage, right.modifiers, right.usage);
     }
     void printStatus() {
         Serial.printf("# HID enabled=%d ready=%d busy=%d sent=%lu skipped=%lu\n",

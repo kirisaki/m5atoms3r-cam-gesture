@@ -12,3 +12,5 @@ build/
 managed_components/
 sdkconfig
 sdkconfig.old
+windows/**/bin/
+windows/**/obj/
