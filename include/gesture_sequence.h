@@ -13,7 +13,7 @@ public:
     static constexpr int MaxSegments = 3;
     using Direction = GestureProtocol::Direction;
     enum class Event { None, Segment, Complete, Cancel };
-    enum class Reason { None, Timeout, TooManySegments, Global, FrameGap };
+    using Reason = GestureProtocol::CancelReason;
     struct Motion {
         float x = 0, y = 0; // Mounted coordinates: right/down positive.
         int inliers = 0, moving = 0;
@@ -25,7 +25,7 @@ public:
         Direction parts[MaxSegments] = {};
         int count = 0;
         bool tracking = false, waiting = false;
-        uint32_t idleMs = 0;
+        uint32_t idleMs = 0, remainingMs = 0;
     };
     static constexpr int ContinuationSpeed = 20;
     static constexpr uint32_t StopQuietMs = GESTURE_SEQUENCE_STOP_MS;
@@ -44,7 +44,10 @@ public:
         if (m.global) return cancel(Reason::Global, now);
         if (waiting_) {
             if (active) quietSince_ = now;
-            if (now - quietSince_ >= QuietMs && now - blockedAt_ >= RearmDelayMs) waiting_ = false;
+            const uint32_t quietLeft = now - quietSince_ >= QuietMs ? 0 : QuietMs - (now - quietSince_);
+            const uint32_t delayLeft = now - blockedAt_ >= RearmDelayMs ? 0 : RearmDelayMs - (now - blockedAt_);
+            remainingMs_ = quietLeft > delayLeft ? quietLeft : delayLeft;
+            if (!remainingMs_) waiting_ = false;
             return result();
         }
         if (tracking_ && now - startedAt_ > MaxDurationMs) return cancel(Reason::Timeout, now);
@@ -87,7 +90,7 @@ public:
         if (tracking_ && !active && idleMs_ >= StopQuietMs) {
             Result completed = result(Event::Complete);
             block(now);
-            completed.tracking = false; completed.waiting = true;
+            completed.tracking = false; completed.waiting = true; completed.remainingMs = RearmDelayMs;
             return completed;
         }
         return result(event);
@@ -107,14 +110,15 @@ private:
         r.event = event; r.reason = reason; r.count = count_;
         for (int i = 0; i < count_; ++i) r.parts[i] = parts_[i];
         r.tracking = tracking_; r.waiting = waiting_; r.idleMs = idleMs_;
+        r.remainingMs = remainingMs_;
         return r;
     }
     void block(uint32_t now) {
-        reset(); waiting_ = true; blockedAt_ = quietSince_ = now;
+        reset(); waiting_ = true; blockedAt_ = quietSince_ = now; remainingMs_ = RearmDelayMs;
     }
     Result cancel(Reason reason, uint32_t now) {
         auto r = result(tracking_ ? Event::Cancel : Event::None, reason);
-        block(now); r.tracking = false; r.waiting = true;
+        block(now); r.tracking = false; r.waiting = true; r.remainingMs = RearmDelayMs;
         return r;
     }
     Direction parts_[MaxSegments] = {};
@@ -123,5 +127,5 @@ private:
     float travel_ = 0, peakSpeed_ = 0;
     bool tracking_ = false, waiting_ = false;
     uint32_t startedAt_ = 0, lastMotion_ = 0, candidateAt_ = 0, candidateStarted_ = 0;
-    uint32_t quietSince_ = 0, blockedAt_ = 0, idleMs_ = 0;
+    uint32_t quietSince_ = 0, blockedAt_ = 0, idleMs_ = 0, remainingMs_ = 0;
 };

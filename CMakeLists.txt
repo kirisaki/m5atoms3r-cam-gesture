@@ -17,7 +17,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 enable_testing()
-foreach(name gesture_detector gesture_protocol hid_shortcut shortcut_protocol)
+foreach(name gesture_detector gesture_protocol hid_shortcut shortcut_protocol receiver_view)
     add_executable(${name}_test test/${name}_test.cpp)
     target_link_libraries(${name}_test PRIVATE gesture_host)
     # Tests use assert: keep assertions even in Release/RelWithDebInfo builds.

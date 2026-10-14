@@ -57,5 +57,31 @@ int main() {
     ++f.eventSequence; f.uptimeMs = f.eventMs + EventMaxAgeMs;
     assert(tracker.accept(f));
     ++f.eventSequence; f.direction = Direction::None; assert(!tracker.accept(f));
+    f = {}; f.version = 2; f.state = State::WaitClear; f.phase = Phase::Complete;
+    f.count = 3; f.parts[0] = Direction::Right; f.parts[1] = Direction::Down; f.parts[2] = Direction::Left;
+    f.durationMs = 1500; f.remainingMs = 1000;
+    uint8_t extended[DisplayPacketSize]; encodeDisplay(f, extended);
+    assert(extended[1] == 2 && extended[26] == 2 && extended[28] == 3);
+    assert(extended[29] == 2 && extended[30] == 4 && extended[31] == 1);
+    assert(extended[32] == 0xe8 && extended[33] == 3);
+    assert(decode(extended, sizeof(extended), decoded));
+    assert(decoded.version == 2 && decoded.count == 3 && decoded.parts[2] == Direction::Left);
+    assert(decoded.remainingMs == 1000 && decoded.durationMs == 1500);
+    for (size_t i = 0; i < DisplayPacketSize; ++i) for (int bit = 0; bit < 8; ++bit) {
+        extended[i] ^= 1 << bit;
+        assert(!decode(extended, sizeof(extended), decoded));
+        extended[i] ^= 1 << bit;
+    }
+    const int offsets[] = {26,27,28,29,32,1};
+    const int values[] = {6,5,4,0,255,1};
+    for (int i = 0; i < 6; ++i) {
+        encodeDisplay(f, extended); extended[offsets[i]] = values[i];
+        if (offsets[i] == 32) extended[33] = 255;
+        const auto crc = crc16(extended, 36); extended[36] = crc & 255; extended[37] = crc >> 8;
+        assert(!decode(extended, sizeof(extended), decoded));
+    }
+    encode(f, p); assert(decode(p, sizeof(p), decoded));
+    assert(decoded.version == 1 && !decoded.count && decoded.phase == Phase::None);
+    assert(!decode(nullptr, DisplayPacketSize, decoded));
     puts("gesture protocol tests passed");
 }

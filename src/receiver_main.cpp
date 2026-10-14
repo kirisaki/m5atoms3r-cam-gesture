@@ -10,7 +10,7 @@ using namespace GestureProtocol;
 // M5Unified/M5GFX use controller 1 for internal devices and LCD backlight.
 TwoWire bus(0);
 ReceiverDisplay display;
-struct Received { uint8_t bytes[PacketSize]; uint32_t receivedMs; };
+struct Received { uint8_t bytes[DisplayPacketSize]; uint8_t size; uint32_t receivedMs; };
 QueueHandle_t packets = nullptr;
 portMUX_TYPE countersLock = portMUX_INITIALIZER_UNLOCKED;
 uint32_t dropped = 0;
@@ -24,11 +24,12 @@ void receive(int count) {
     int n = 0;
     while (bus.available()) {
         const int value = bus.read();
-        if (n < static_cast<int>(PacketSize)) packet.bytes[n] = static_cast<uint8_t>(value);
+        if (n < static_cast<int>(DisplayPacketSize)) packet.bytes[n] = static_cast<uint8_t>(value);
         ++n;
     }
     packet.receivedMs = millis();
-    if (count != static_cast<int>(PacketSize) || n != count ||
+    packet.size = static_cast<uint8_t>(n);
+    if ((count != static_cast<int>(PacketSize) && count != static_cast<int>(DisplayPacketSize)) || n != count ||
         xQueueSend(packets, &packet, 0) != pdTRUE) {
         portENTER_CRITICAL(&countersLock); ++dropped; portEXIT_CRITICAL(&countersLock);
     }
@@ -37,6 +38,7 @@ void receive(int count) {
 void setup() {
     Serial.begin(115200);
     display.begin();
+    Serial.println("# receiver_display=sequence_v2 protocols=1,2 rotation=3");
     packets = xQueueCreate(16, sizeof(Received));
     if (!packets) {
         Serial.println("# [FAIL] RX queue allocation");
@@ -52,10 +54,13 @@ void setup() {
 void loop() {
     static uint32_t lastDropped = 0;
     static bool timeoutReported = false;
+    while (Serial.available()) {
+        if (Serial.read() == 'i') Serial.println("# receiver_display=sequence_v2 protocols=1,2 rotation=3");
+    }
     Received packet;
     while (packets && xQueueReceive(packets, &packet, 0) == pdTRUE) {
         Frame frame;
-        if (!decode(packet.bytes, sizeof(packet.bytes), frame)) {
+        if (!decode(packet.bytes, packet.size, frame)) {
             Serial.println("# [FAIL] Invalid I2C packet (version/fields/CRC)");
             display.fail("INVALID PACKET");
             continue;
@@ -64,6 +69,7 @@ void loop() {
         const uint32_t queueAge = millis() - packet.receivedMs;
         if (queueAge > LinkTimeoutMs) continue;
         frame.uptimeMs += queueAge;
+        frame.remainingMs = remainingAfter(frame.remainingMs, queueAge);
         lastPacket = packet.receivedMs;
         if (!connected) Serial.println("# I2C connected");
         connected = true; timeoutReported = false;
@@ -71,6 +77,14 @@ void loop() {
         display.received(frame, event, millis());
         if (event)
             Serial.printf("GESTURE %s seq=%lu boot=%08lx\n", directionName(frame.direction), frame.eventSequence, frame.bootId);
+        if (frame.version == 2) {
+            Serial.printf("# DISPLAY phase=%u reason=%u path=", static_cast<unsigned>(frame.phase), static_cast<unsigned>(frame.reason));
+            for (int i = 0; i < frame.count; ++i) {
+                if (i) Serial.print('>');
+                Serial.print(directionName(frame.parts[i]));
+            }
+            Serial.printf(" remaining=%u total=%u\n", frame.remainingMs, frame.durationMs);
+        }
         Serial.printf("# CAMERA state=%u error=%u flags=0x%02x failures=%lu uptime=%lu\n",
                       static_cast<unsigned>(frame.state), static_cast<unsigned>(frame.error), frame.flags, frame.failures, frame.uptimeMs);
     }

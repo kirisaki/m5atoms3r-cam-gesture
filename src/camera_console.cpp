@@ -33,7 +33,7 @@ void CameraApp::status() {
     Serial.println("# HID: 0=off 1=on (standalone only) [=test left ]=test right");
     Serial.println("# Control: @G1 <id> GET/SET/KEEP/STOP/STANDALONE (LF terminated)");
     Serial.println("# USB: u=enter firmware download mode (stops camera until restart/upload)");
-    Serial.println("# Measurement: r=start (HID off) s=stop c=right display cue (no key)");
+    Serial.println("# Measurement: r=start (HID off) s=stop c=START display cue (no key)");
 #if GESTURE_SEQUENCE_EXPERIMENT
     Serial.printf("# sequence_experiment=1 max_segments=%d stop_quiet_ms=%lu rearm_delay_ms=%lu max_duration_ms=%lu HID_LOCKED_OFF\n",
                   GestureSequence::MaxSegments, GestureSequence::StopQuietMs,
@@ -101,9 +101,9 @@ void CameraApp::handleCommands() {
             case 'c':
                 if (measurement && latest.state == GestureDetector::State::Ready) {
                     const uint32_t now = millis();
-                    gestureBus.emit(GestureProtocol::Direction::Right, now);
+                    gestureBus.cue(now);
                     publishStatus();
-                    Serial.printf("# TRIAL_CUE RIGHT ms=%lu ack=%d\n", now, gestureBus.acknowledged());
+                    Serial.printf("# TRIAL_CUE START ms=%lu ack=%d\n", now, gestureBus.acknowledged());
                 } else Serial.println("# TRIAL_CUE NOT_READY");
                 break;
             case '0': gestureHid.setEnabled(false); break;

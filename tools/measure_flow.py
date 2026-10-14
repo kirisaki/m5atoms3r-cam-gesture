@@ -25,7 +25,7 @@ def main():
             output.write(json.dumps(row) + '\n')
             output.flush()
 
-        save({'trial': args.label, 'seconds': args.seconds, 'cue': 'right'})
+        save({'trial': args.label, 'seconds': args.seconds, 'cue': 'start'})
         port = serial.Serial(baudrate=115200, timeout=0.2)
         port.dtr, port.rts = True, False
         port.port = args.port
@@ -39,7 +39,7 @@ def main():
             frames = 0
             events = []
             sequences = []
-            print('Keep still: calibrating, then a right arrow will signal the start.', flush=True)
+            print('Keep still: calibrating, then START will signal the start.', flush=True)
             while deadline is None or time.monotonic() < deadline:
                 now = time.monotonic()
                 if deadline is None and now - started > 20:

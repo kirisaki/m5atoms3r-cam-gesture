@@ -9,6 +9,7 @@ void CameraApp::calibrate() {
     detector.setMirror(mirror);
 #endif
     latest = {};
+    gestureBus.resetDisplay();
     previousFlowMs = 0;
 #if GESTURE_SEQUENCE_EXPERIMENT
     previousSequenceMs = 0;
@@ -89,6 +90,7 @@ void CameraApp::capture() {
     }
 #if GESTURE_SEQUENCE_EXPERIMENT
     const auto &sequence = latest.sequence;
+    gestureBus.sequence(sequence, now);
     if (measurement) {
         Serial.printf("# SEQ_STOP_FLOW %lu %lu %.3f %.3f %d %d %.2f %.2f %d %lu %d %lu\n",
                       now, previousSequenceMs ? now - previousSequenceMs : 0,
@@ -106,8 +108,6 @@ void CameraApp::capture() {
             Serial.print(GestureProtocol::directionName(sequence.parts[i]));
         }
         Serial.printf(" reason=%s\n", GestureSequence::reasonName(sequence.reason));
-        if (sequence.event == GestureSequence::Event::Segment)
-            gestureBus.emit(sequence.parts[sequence.count - 1], now);
         if (sequence.event == GestureSequence::Event::Complete) ++events;
     }
 #else

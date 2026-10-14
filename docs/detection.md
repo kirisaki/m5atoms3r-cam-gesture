@@ -87,7 +87,7 @@ uv run --with pyserial python tools/measure_flow.py --sequence --port /dev/ttyAC
 
 `# SEQUENCE SEGMENT` は途中の方向、`COMPLETE` は確定、`CANCEL` は中止です。
 `path=RIGHT>DOWN>LEFT` のように順序を出します。I2C表示は途中の各方向を表示し、
-開始合図も従来の右矢印を使います。表示のCountは完成したジェスチャ数とは一致しません。
+開始合図は緑の `START` 表示です。I2C v2では経路全体と確定・中止も表示し、Countは表示しません。
 計測中の `# SEQ_STOP_FLOW` は時刻・間隔・右/下のフロー・支持領域数・移動領域数・
 画像内中心x/y・端の支持数（診断用）・動きの途切れた時間ms・大域的な動き・処理時間です。
 画像と計測値はローカルの `recordings/` に保存し、Gitには含めません。
