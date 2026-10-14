@@ -85,6 +85,7 @@ Console.WriteLine("PASS: firmware compatibility probe.");
 
 ProfileTests.Run();
 SequenceTests.Run();
+HidTests.Run();
 await DesktopTests.RunAsync();
 
 sealed class FakeTransport : ILineTransport

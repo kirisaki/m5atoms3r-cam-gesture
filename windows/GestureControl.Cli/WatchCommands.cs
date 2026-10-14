@@ -7,8 +7,8 @@ internal static class WatchCommands
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Foreground monitoring requires Windows");
         var watch = args[0] == "watch";
-        if (watch && (args.Length < 2 || !args[1].StartsWith("COM", StringComparison.OrdinalIgnoreCase)))
-            throw new ArgumentException("watch requires an explicit Windows COM port");
+        if (watch && (args.Length < 2 || (!args[1].StartsWith("COM", StringComparison.OrdinalIgnoreCase) && !args[1].Equals("HID", StringComparison.OrdinalIgnoreCase))))
+            throw new ArgumentException("watch requires HID or an explicit Windows COM port");
         string? config = null;
         var seconds = 0;
         for (var i = watch ? 2 : 1; i < args.Length; ++i)
@@ -30,10 +30,10 @@ internal static class WatchCommands
         {
             using var watcher = settings is null ? null : new ProfileWatcher(settings, WindowsForeground.Current, () =>
             {
-                var device = new DeviceConnection(new SerialTransport(args[1]));
+                var device = ControlDevice.Open(args[1]);
                 device.Log = line =>
                 {
-                    if (line.StartsWith("# HID LEFT ") || line.StartsWith("# HID RIGHT ")) Log(line);
+                    Log(line);
                 };
                 return device;
             }) { Log = Log };

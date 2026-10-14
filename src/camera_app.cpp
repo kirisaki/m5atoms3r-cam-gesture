@@ -155,6 +155,7 @@ void CameraApp::begin() {
 void CameraApp::tick() {
     gestureHid.poll();
     handleCommands();
+    hidControl.poll(gestureHid, measurement);
     // Finish key release before another potentially blocking camera capture.
     if (!gestureHid.busy() && cameraReady && enabled && millis() - lastCapture >= CaptureIntervalMs) {
         lastCapture = millis();

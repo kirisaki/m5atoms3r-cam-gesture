@@ -52,3 +52,10 @@ WindowsでCDCポートを閉じた際、自動リセットが誤って作動し�
 g++ -std=c++11 -O1 -Wall -Wextra -Werror -fsanitize=address,undefined -g -Iinclude test/hid_shortcut_test.cpp -o /tmp/atoms3r-hid-test
 ASAN_OPTIONS=detect_leaks=0 /tmp/atoms3r-hid-test
 ```
+
+## 設定アプリとのHID通信
+
+カメラはキーボードに加えて設定用HIDも公開します。Windows設定アプリはCOMポートを開かず、
+対象カメラを自動検出します。USB CDCは開発用ログ・計測・書き込みのため残しています。
+`atoms3r-cam-sequence-hid` は起動時にキー入力が停止し、アプリの「開始」で有効になります。
+詳しくは[HID設定通信](hid-control.md)を参照してください。

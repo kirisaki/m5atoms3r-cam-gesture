@@ -7,6 +7,14 @@ namespace GestureControl;
 
 public sealed record DesktopSettings(string Port, ProfileSettings Profiles)
 {
+    public string? DeviceSerial { get; init; }
+    public static string? ValidateSerial(string? serial)
+    {
+        if (string.IsNullOrEmpty(serial)) return null;
+        if (serial.Length > 64 || serial.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('-' or '_')))
+            throw new InvalidDataException("カメラの識別番号が不正です。");
+        return serial;
+    }
     public static string ValidatePort(string port, bool required = true)
     {
         var normalized = port.Trim().ToUpperInvariant();
@@ -18,7 +26,7 @@ public sealed record DesktopSettings(string Port, ProfileSettings Profiles)
     public string ToJson()
     {
         using var profiles = JsonDocument.Parse(Profiles.ToJson());
-        return JsonSerializer.Serialize(new { version = 1, port = ValidatePort(Port, false), profiles = profiles.RootElement },
+        return JsonSerializer.Serialize(new { version = 2, port = ValidatePort(Port, false), deviceSerial = ValidateSerial(DeviceSerial), profiles = profiles.RootElement },
             new JsonSerializerOptions { WriteIndented = true });
     }
     public static DesktopSettings Parse(string json)
@@ -27,9 +35,10 @@ public sealed record DesktopSettings(string Port, ProfileSettings Profiles)
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
         }) ?? throw new InvalidDataException("設定ファイルが空です。");
-        if (data.Version != 1 || data.Port is null || data.Profiles.ValueKind != JsonValueKind.Object)
+        if (data.Version is not (1 or 2) || data.Port is null || data.Profiles.ValueKind != JsonValueKind.Object)
             throw new InvalidDataException("設定ファイルの形式に対応していません。");
-        return new(ValidatePort(data.Port, false), ProfileSettings.Parse(data.Profiles.GetRawText()));
+        return new(ValidatePort(data.Port, false), ProfileSettings.Parse(data.Profiles.GetRawText()))
+        { DeviceSerial = data.Version == 2 ? ValidateSerial(data.DeviceSerial) : null };
     }
     public static DesktopSettings Load(string path) => Parse(File.ReadAllText(path));
     public void Save(string path)
@@ -57,6 +66,7 @@ public sealed record DesktopSettings(string Port, ProfileSettings Profiles)
     {
         public int Version { get; set; }
         public string? Port { get; set; }
+        public string? DeviceSerial { get; set; }
         public JsonElement Profiles { get; set; }
     }
 }

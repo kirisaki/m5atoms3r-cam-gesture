@@ -31,6 +31,7 @@ void CameraApp::status() {
                   GestureConfig::Flow::MinX, GestureConfig::Flow::BottomCropPercent);
     Serial.println("# Commands: i/h=info b=reset flow a=axis m=reverse d=debug p=pause/resume v=image trace");
     Serial.println("# HID: 0=off 1=on (standalone only) [=test left ]=test right");
+    Serial.println("# HID control: AGH1 usage=FF00:0053 report=6 bytes=64");
     Serial.println("# Control: @G2 <id> GET/SET/KEEP/STOP/STANDALONE (LF terminated)");
     Serial.println("# Control: @G1 <id> GET/SET/KEEP/STOP/STANDALONE (LF terminated)");
     Serial.println("# USB: u=enter firmware download mode (stops camera until restart/upload)");

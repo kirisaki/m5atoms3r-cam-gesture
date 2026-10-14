@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.IO.Ports;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -12,6 +11,8 @@ public partial class MainWindow : Window
 {
     public ObservableCollection<ProfileRow> Rows { get; } = [];
     private readonly string settingsPath;
+    private string legacyPort = "";
+    private sealed record CameraChoice(string? Serial, string Label);
     private readonly WatchService service = new();
     private readonly SemaphoreSlim commands = new(1, 1);
     private readonly Forms.NotifyIcon tray;
@@ -36,7 +37,8 @@ public partial class MainWindow : Window
         AddRow(settings.Profiles.Default, true);
         foreach (var profile in settings.Profiles.Applications) AddRow(profile);
         ProfileGrid.SelectedIndex = 0;
-        RefreshPorts(initialPort ?? settings.Port);
+        legacyPort = initialPort ?? settings.Port;
+        RefreshCameras(settings.DeviceSerial);
         SaveText.Text = File.Exists(settingsPath) ? "保存済み設定を読み込みました。" : "開始または保存時に、ユーザーフォルダーへ設定を保存します。";
         if (loadFailed) SaveText.Text = "読み込み失敗。下の設定は初期値です。元ファイルは変更していません。";
         service.StatusChanged = status => OnUi(() => ShowStatus(status));
@@ -55,7 +57,7 @@ public partial class MainWindow : Window
         };
         tray.DoubleClick += (_, _) => OnUi(RestoreWindow);
         loading = false;
-        if (initialPort is not null && initialPort != settings.Port) MarkDirty();
+
         UpdateControls();
     }
     private void OnUi(Action action)
@@ -75,15 +77,22 @@ public partial class MainWindow : Window
         SaveText.Text = "未保存の変更があります。保存するまで動作中の設定には反映されません。";
         Title = "AtomS3R Gesture *";
     }
-    private void RefreshPorts(string? selected = null)
+    private void RefreshCameras(string? selected = null)
     {
-        selected ??= PortBox.SelectedItem as string;
-        var ports = SerialPort.GetPortNames().Order(StringComparer.OrdinalIgnoreCase).ToList();
-        if (!string.IsNullOrEmpty(selected) && !ports.Contains(selected, StringComparer.OrdinalIgnoreCase)) ports.Insert(0, selected);
-        PortBox.ItemsSource = ports;
-        PortBox.SelectedItem = selected;
+        selected ??= (CameraBox.SelectedItem as CameraChoice)?.Serial;
+        var choices = new List<CameraChoice> { new(null, "自動検出") };
+        try
+        {
+            choices.AddRange(WindowsHidTransport.FindCameras().Select(c => new CameraChoice(c.SerialNumber, c.DisplayName)));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        { ErrorText.Text = "カメラを検索できませんでした: " + e.Message; }
+        if (!string.IsNullOrEmpty(selected) && choices.All(c => c.Serial != selected))
+            choices.Add(new(selected, $"未接続 · {selected}"));
+        CameraBox.ItemsSource = choices;
+        CameraBox.SelectedItem = choices.FirstOrDefault(c => c.Serial == selected) ?? choices[0];
     }
-    private DesktopSettings ReadEditor(bool requirePort)
+    private DesktopSettings ReadEditor()
     {
         ProfileGrid.CommitEdit(DataGridEditingUnit.Cell, true);
         ProfileGrid.CommitEdit(DataGridEditingUnit.Row, true);
@@ -97,7 +106,8 @@ public partial class MainWindow : Window
             applications = Rows.Where(r => !r.IsDefault).Select(r => new
             { executable = r.Executable.Trim(), enabled = r.Enabled, bindings = r.ReadBindings() })
         });
-        return new(DesktopSettings.ValidatePort(PortBox.SelectedItem as string ?? "", requirePort), ProfileSettings.Parse(json));
+        return new(legacyPort, ProfileSettings.Parse(json))
+        { DeviceSerial = DesktopSettings.ValidateSerial((CameraBox.SelectedItem as CameraChoice)?.Serial) };
     }
     private async Task PersistAsync(DesktopSettings settings)
     {
@@ -118,11 +128,10 @@ public partial class MainWindow : Window
             return current?.ProcessId == (uint)Environment.ProcessId ? null : current;
         }, () =>
         {
-            var device = new DeviceConnection(new SerialTransport(settings.Port));
+            var device = ControlDevice.Open(serial: settings.DeviceSerial);
             device.Log = line =>
             {
-                if (line.StartsWith("# HID LEFT ") || line.StartsWith("# HID RIGHT ") || line.StartsWith("# HID PATH "))
-                    OnUi(() => AppendLog(line));
+                OnUi(() => AppendLog(line));
             };
             return device;
         });
@@ -154,7 +163,7 @@ public partial class MainWindow : Window
         else
         {
             if (loadFailed) throw new InvalidDataException("読み込みに失敗した設定を確認し、保存してから開始してください。");
-            var settings = ReadEditor(true);
+            var settings = ReadEditor();
             await PersistAsync(settings);
             await StartAsync(settings);
         }
@@ -162,7 +171,7 @@ public partial class MainWindow : Window
     private Task SaveAsync() => RunActionAsync(async () =>
     {
         var running = service.IsRunning;
-        var settings = ReadEditor(running);
+        var settings = ReadEditor();
         await PersistAsync(settings);
         if (running)
         {
@@ -172,11 +181,11 @@ public partial class MainWindow : Window
     });
     private Task StandaloneAsync() => RunActionAsync(async () =>
     {
-        var port = DesktopSettings.ValidatePort(PortBox.SelectedItem as string ?? "");
+        var serial = (CameraBox.SelectedItem as CameraChoice)?.Serial;
         await service.StopAsync();
         await Task.Run(() =>
         {
-            using var device = new DeviceConnection(new SerialTransport(port));
+            using var device = ControlDevice.Open(serial: serial);
             device.Identify(); device.Standalone();
         });
         paused = false;
@@ -209,7 +218,7 @@ public partial class MainWindow : Window
         ToggleButton.IsEnabled = available && (!loadFailed || service.IsRunning);
         trayToggle.Text = ToggleButton.Content.ToString();
         trayToggle.Enabled = ToggleButton.IsEnabled;
-        PortBox.IsEnabled = RefreshButton.IsEnabled = available && !service.IsRunning;
+        CameraBox.IsEnabled = RefreshButton.IsEnabled = available && !service.IsRunning;
         SaveButton.IsEnabled = StandaloneButton.IsEnabled = AddButton.IsEnabled = RemoveButton.IsEnabled = ProfileGrid.IsEnabled = MappingEditor.IsEnabled = available;
     }
     private void AppendLog(string message)
@@ -246,7 +255,7 @@ public partial class MainWindow : Window
                 RestoreWindow();
                 var choice = MessageBox.Show(this, "変更を保存して終了しますか？", "未保存の設定", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
                 if (choice == MessageBoxResult.Cancel) return;
-                if (choice == MessageBoxResult.Yes) await PersistAsync(ReadEditor(false));
+                if (choice == MessageBoxResult.Yes) await PersistAsync(ReadEditor());
             }
             await service.DisposeAsync();
             finished = true;
@@ -273,8 +282,8 @@ public partial class MainWindow : Window
     private async void SaveClick(object sender, RoutedEventArgs e) => await SaveAsync();
     private async void StandaloneClick(object sender, RoutedEventArgs e) => await StandaloneAsync();
     private async void ExitClick(object sender, RoutedEventArgs e) => await ExitAsync();
-    private void PortChanged(object sender, SelectionChangedEventArgs e) => MarkDirty();
-    private async void RefreshClick(object sender, RoutedEventArgs e) => await RunActionAsync(() => { RefreshPorts(); return Task.CompletedTask; });
+    private void CameraChanged(object sender, SelectionChangedEventArgs e) => MarkDirty();
+    private async void RefreshClick(object sender, RoutedEventArgs e) => await RunActionAsync(() => { RefreshCameras(); return Task.CompletedTask; });
     private void AddClick(object sender, RoutedEventArgs e)
     {
         AddRow(new("app.exe", Binding.Left, Binding.Right, true));

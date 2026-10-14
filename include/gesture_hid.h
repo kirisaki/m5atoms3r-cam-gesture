@@ -57,7 +57,8 @@ public:
         else shortcut_.setEnabled(enabled, millis());
         Serial.printf("# hid_enabled=%d\n", shortcut_.enabled());
     }
-    void command(const ShortcutProtocol::Request &request, bool measurement) {
+    const HidShortcut<Transport> &state() const { return shortcut_; }
+    const char *apply(const ShortcutProtocol::Request &request, bool measurement) {
         using ShortcutProtocol::Action;
         const uint32_t now = millis();
         shortcut_.poll(now);
@@ -86,6 +87,10 @@ public:
                 else shortcut_.standalone(now);
                 break;
         }
+        return error;
+    }
+    void command(const ShortcutProtocol::Request &request, bool measurement) {
+        const char *error = apply(request, measurement);
         if (error) {
             Serial.printf("@G%u %lu ERR %s\n", request.version, static_cast<unsigned long>(request.id), error);
             return;

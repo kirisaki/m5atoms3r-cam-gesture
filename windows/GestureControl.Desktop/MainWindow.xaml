@@ -14,12 +14,12 @@
             <StackPanel>
                 <DockPanel LastChildFill="False">
                     <TextBlock Text="カメラ" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <ComboBox x:Name="PortBox" Width="100" Height="28" VerticalContentAlignment="Center" SelectionChanged="PortChanged" AutomationProperties.AutomationId="PortBox"/>
+                    <ComboBox x:Name="CameraBox" Width="190" DisplayMemberPath="Label" Height="28" VerticalContentAlignment="Center" SelectionChanged="CameraChanged" AutomationProperties.AutomationId="CameraBox"/>
                     <Button x:Name="RefreshButton" Content="再検索" Click="RefreshClick" Margin="6,0,10,0"/>
                     <Button x:Name="ToggleButton" Content="開始" Background="{StaticResource Accent}" Foreground="White" Click="ToggleClick" AutomationProperties.AutomationId="ToggleButton"/>
                     <Button x:Name="StandaloneButton" Content="通常のAlt＋左右へ戻す" Click="StandaloneClick" AutomationProperties.AutomationId="StandaloneButton" Margin="0"/>
                 </DockPanel>
-                <TextBlock x:Name="StatusText" Text="未開始 — カメラのポートを選び、開始してください。" FontWeight="SemiBold" Margin="0,8,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="StatusText"/>
+                <TextBlock x:Name="StatusText" Text="未開始 — USBをつないで開始してください。" FontWeight="SemiBold" Margin="0,8,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="StatusText"/>
                 <TextBlock x:Name="ActiveText" Text="開始前はカメラの入力設定を変更しません。" Foreground="#566B78" Margin="0,3,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="ActiveText"/>
             </StackPanel>
         </Border>

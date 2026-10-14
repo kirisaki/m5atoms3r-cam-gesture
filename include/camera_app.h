@@ -3,6 +3,7 @@
 #include "gesture_detector.h"
 #include "gesture_i2c.h"
 #include "gesture_hid.h"
+#include "hid_control.h"
 #if GESTURE_SEQUENCE_EXPERIMENT
 #include "sequence_detector.h"
 #include "sequence_shortcut.h"
@@ -25,6 +26,7 @@ private:
     CameraDetector detector;
     GestureI2c gestureBus;
     GestureHid gestureHid;
+    HidControl hidControl;
     ShortcutProtocol::Framer shortcutFrames;
     GestureProtocol::Error captureError = GestureProtocol::Error::None;
     uint32_t lastGoodFrame = 0;

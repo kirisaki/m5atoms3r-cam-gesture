@@ -1,8 +1,8 @@
 # Windows アプリの開発
 
 .NET 10 のWPFアプリとコマンドラインツールで、上下左右・最大3ステップの割り当て変更と前面アプリに応じた自動切り替えを行います。
-カメラがUSBキーボードとしてキーを送り、Windows側はシリアルで割り当てを指定します。
-独自HIDやWindows側のキー注入は使いません。
+カメラがUSBキーボードとしてキーを送り、Windows側は設定用USB HIDで割り当てを指定します。
+Windows標準のHIDドライバーで接続し、Windows側のキー注入は使いません。
 WPFアプリでは画面からアプリ別の割り当てを保存し、トレイで常駐できます。CLIではJSONを指定して使います。
 
 ## WPFの設定画面とトレイ
@@ -10,16 +10,16 @@ WPFアプリでは画面からアプリ別の割り当てを保存し、トレ�
 Windows PowerShellでリポジトリのルートから起動します。
 
 ```powershell
-dotnet run --project windows/GestureControl.Desktop -- --port COM10
+dotnet run --project windows/GestureControl.Desktop
 ```
 
 WSLから起動する場合はWindowsの.NETを使います。
 
 ```bash
-'/mnt/c/Program Files/dotnet/dotnet.exe' run --project '\\wsl.localhost\Ubuntu-20.04\home\kirisaki\devel\m5atoms3r-cam-gesture\windows\GestureControl.Desktop\GestureControl.Desktop.csproj' -- --port COM10
+'/mnt/c/Program Files/dotnet/dotnet.exe' run --project '\\wsl.localhost\Ubuntu-20.04\home\kirisaki\devel\m5atoms3r-cam-gesture\windows\GestureControl.Desktop\GestureControl.Desktop.csproj'
 ```
 
-1. カメラのCOMポートを選択します。「再検索」でポート一覧を更新できます。
+1. USB接続したカメラを自動検出します。複数台なら対象を選び、「再検索」で一覧を更新できます。
 2. 左側でアプリを選び、右側でジェスチャと `Ctrl+Z` などのキーを指定します。
    「ジェスチャを追加」で `→ ↓`、`→ ↓ ←` などを追加できます。チェックを外すとアプリ全体を無効化します。
 3. 「アプリを追加」で行を増やし、`notepad.exe` などの実行ファイル名を入力します。
@@ -31,7 +31,7 @@ WSLから起動する場合はWindowsの.NETを使います。
 設定画面自身が手前にある間は、ジェスチャによる入力を停止します。
 メモ帳などへ移るとそのアプリの設定に切り替わります。
 
-- **一時停止／再開**: カメラへSTOPを送り、ポートを閉じます。再開時に前面アプリを調べ直します。
+- **一時停止／再開**: カメラへSTOPを送り、接続を閉じます。再開時に前面アプリを調べ直します。
 - **×で閉じる**: 画面を隠し、トレイで動作を続けます。編集中の内容もメモリー内に残ります。
 - **トレイのダブルクリック**: 設定画面を再表示します。アプリを再度起動しても既存の画面を表示します。
 - **トレイの右クリック**: 設定表示、開始／一時停止／再開、通常モードへ復帰、終了を操作できます。
@@ -42,10 +42,11 @@ WSLから起動する場合はWindowsの.NETを使います。
 アプリの起動だけではカメラへ接続しません。再起動後も「開始」を押して有効にします。
 Windowsログオン時の自動起動や自動開始は登録しません。
 起動前にカメラが通常モードだった場合は、その通常動作が継続します。
-CLIやシリアルモニターは閉じてから使ってください。
+他の設定用CLIは終了してから使ってください。シリアルでのログ閲覧は併用できますが、
+動作中に別ツールから設定コマンドを送らないでください。
 
 設定保存先は `%LOCALAPPDATA%\AtomS3RGesture\settings.json` です。
-COM番号と全プロファイルを1つのJSONに保存し、前回分を `settings.json.bak` に残します。
+選択したカメラの識別番号と全プロファイルを1つのJSONに保存し、前回分を `settings.json.bak` に残します。
 全設定の検証と一時ファイルへの書き込みが成功してからファイルを置き換えます。
 不正なキー名や書き込み失敗の場合は、既存の保存設定と動作中の設定を保持します。
 保存済みファイルが壊れている場合はエラーと初期値を表示し、確認して保存するまで開始しません。
@@ -57,7 +58,7 @@ CLIと同じプロファイル形式を持ちます。CLIの `--config` に指�
 
 ビルド済みの `windows/GestureControl.Desktop/bin/Debug/net10.0-windows/GestureControl.Desktop.exe`
 からも起動できます（Windowsの.NET 10 Desktop Runtimeが必要です）。
-トレイと画面は同じ監視処理を使い、シリアル通信はUIとは別のワーカーで順番に実行します。
+トレイと画面は同じ監視処理を使い、HID通信はUIとは別のワーカーで順番に実行します。
 
 ## ビルドと実行
 
@@ -67,35 +68,37 @@ Windowsの.NET 10 SDKを使います。編集はWSL内で行えます。
 ```powershell
 dotnet build windows/GestureControl.Cli
 dotnet run --project windows/GestureControl.Tests
-dotnet run --project windows/GestureControl.Cli -- ports
-dotnet run --project windows/GestureControl.Cli -- info COM10
+dotnet run --project windows/GestureControl.Cli -- devices
+dotnet run --project windows/GestureControl.Cli -- info HID
 ```
 
 WSLからはWindowsの実行ファイルとUNC形式のプロジェクトパスを指定します。
 
 ```bash
-'/mnt/c/Program Files/dotnet/dotnet.exe' run --project '\\wsl.localhost\Ubuntu-20.04\home\kirisaki\devel\m5atoms3r-cam-gesture\windows\GestureControl.Cli\GestureControl.Cli.csproj' -- info COM10
+'/mnt/c/Program Files/dotnet/dotnet.exe' run --project '\\wsl.localhost\Ubuntu-20.04\home\kirisaki\devel\m5atoms3r-cam-gesture\windows\GestureControl.Cli\GestureControl.Cli.csproj' -- info HID
 ```
 
-COM番号は環境によって変わります。カメラをWindows側に接続し、他のシリアルモニターを閉じてください。
+普段はCOM番号を使わず、`HID` を指定します。カメラはWindows側へ接続してください。
+[HID通信仕様と検証手順](hid-control.md)に自動検出・転送方式をまとめています。
+`HID` の代わりに `COM10` などを指定すると、開発用のシリアル互換接続になります。
 `ports` は一覧だけを表示し、全COMポートに設定コマンドを送ることはありません。
-`info` などは最初に既存の `i` コマンドで対応ファームウェアを確認します。
+COM指定時の `info` などは最初に既存の `i` コマンドで対応ファームウェアを確認します。
 古いファームウェアには `@G1` を送信しません（旧版では数字の `1` がHID有効化になります）。
 
 ## 割り当てを試す
 
 ```powershell
 # キーを送らず、左右設定の適用・読み戻し・通信断時停止を検証。終了後もHID停止。
-dotnet run --project windows/GestureControl.Cli -- verify COM10
+dotnet run --project windows/GestureControl.Cli -- verify HID
 
 # 実行中だけ左右で Ctrl+PageUp / Ctrl+PageDown を送る。
-dotnet run --project windows/GestureControl.Cli -- run COM10 --left Ctrl+PageUp --right Ctrl+PageDown
+dotnet run --project windows/GestureControl.Cli -- run HID --left Ctrl+PageUp --right Ctrl+PageDown
 
 # 10秒間、入力停止の状態で接続維持を検証する。
-dotnet run --project windows/GestureControl.Cli -- run COM10 --disabled --seconds 10
+dotnet run --project windows/GestureControl.Cli -- run HID --disabled --seconds 10
 
 # アプリが不要な通常動作（Alt+Left / Alt+Right）へ戻す。
-dotnet run --project windows/GestureControl.Cli -- standalone COM10
+dotnet run --project windows/GestureControl.Cli -- standalone HID
 ```
 
 `run` は500msごとに通信を維持します。Ctrl+C・時間指定での終了時にはSTOPします。
@@ -126,7 +129,8 @@ Home/End、Insert/Delete、Enter/Esc/Backspace/Tab/Space。
 
 旧バージョン1の左右設定は読み込み時に移行し、次の保存からプロファイル形式をバージョン2にします。
 既存の左右キーとアプリ全体の有効/無効は保ち、上下・組み合わせは未割り当てです。
-GUI設定ファイル外側のバージョンは1のままです。
+GUI設定ファイル外側はバージョン2で、カメラ識別番号を保存します。
+バージョン1も読み込め、旧COM番号は互換データとして保持します。
 
 CLIの `watch --config` でも同じ形式が使えます。例:
 
@@ -142,10 +146,11 @@ CLIの `watch --config` でも同じ形式が使えます。例:
 ```
 
 アプリごとの設定は経路全体の置き換えです。指定しなかった経路は無効になります。
-旧ファームウェアには左右のみの設定で接続でき、上下・組み合わせの割り当てがある場合は更新が必要と表示します。
-`verify COM10` は対応機種なら上下・2/3ステップ設定の読み戻しも確認し、キーを送らず終了時に停止します。
+設定用HIDがない旧ファームウェアにはCLIのCOM指定で接続できます。左右専用版では、
+上下・組み合わせの割り当てがある場合は更新が必要と表示します。WPFアプリには設定用HID対応版が必要です。
+`verify HID` は全52経路の転送と読み戻しも確認し、キーを送らず終了時に停止します。
 
-## 通信仕様 G2
+## 開発用シリアル通信仕様 G2
 
 接続確認の `i` に対する `# Control: @G2 ...` を確認するとG2を使用します。
 この行は互換用G1行より先に出力されます。GET/KEEP/STOP/STANDALONEの意味と2秒の通信期限はG1と同じです。
@@ -247,10 +252,10 @@ WPFアプリからも同じ監視処理を開始・一時停止できます。
 dotnet run --project windows/GestureControl.Cli -- foreground --seconds 30
 
 # サンプル設定で自動切り替え。Ctrl+Cで停止する。
-dotnet run --project windows/GestureControl.Cli -- watch COM10 --config windows/profiles.example.json
+dotnet run --project windows/GestureControl.Cli -- watch HID --config windows/profiles.example.json
 
 # 60秒だけ動作を試す。
-dotnet run --project windows/GestureControl.Cli -- watch COM10 --config windows/profiles.example.json --seconds 60
+dotnet run --project windows/GestureControl.Cli -- watch HID --config windows/profiles.example.json --seconds 60
 ```
 
 WSLからの実行では、`--config` のファイルにもWindowsから読めるUNCパスを指定してください。
@@ -276,17 +281,18 @@ WSLからの実行では、`--config` のファイルにもWindowsから読め�
 アプリを切り替えた直後のスワイプは避け、約0.5秒待って操作してください。
 負荷や通信状況によって遅延が伸びる場合もあります。
 
-通信エラーや機器側の設定不一致では入力停止を試み、接続を閉じて2秒後に同じCOMポートを再試行します。
+通信エラーや機器側の設定不一致では入力停止を試み、接続を閉じて2秒後に再接続を試みます。
+HIDではカメラを再検出し、個体を選択している場合はそのUSBシリアル番号を照合します。
 再接続後は対応ファームウェアを確認してからSTOPし、その時点の前面アプリを調べ直します。
-直前のアプリ設定を無条件で再送しません。別のCOMポートは自動探索しないので、
-COM番号が変わった場合は番号を指定し直して起動してください。
-未対応ファームウェアのポートには既存の読み取りコマンドだけを送り、設定コマンドを送りません。
+直前のアプリ設定を無条件で再送しません。
+CLIのCOM指定では同じポート番号だけを再試行するため、番号が変わった場合は指定し直してください。
+未対応ファームウェアには識別の読み取りだけを行い、設定コマンドを送りません。
 
 Ctrl+C・`--seconds` による通常終了ではSTOPします。
 強制終了やUSB切断ではカメラの2秒タイムアウトが入力を停止します。
-接続中のカメラ自体をリセットした場合は、前述のとおり起動時に通常モードへ戻り、
-watchが再接続して停止・設定するまで既定のキーが有効になる区間があります。
-終了後に通常のAlt+矢印を使うには `standalone COM10` を実行してください。
+`atoms3r-cam-sequence-hid` はリセット後も入力停止で起動します。
+旧来の単方向HID版は起動時に通常モードへ戻るため、watchが再接続するまで既定のキーが有効になります。
+終了後に通常のAlt+矢印を使うには `standalone HID` を実行してください。
 
 前面アプリの取得にはWindowsの
 [GetForegroundWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getforegroundwindow) と

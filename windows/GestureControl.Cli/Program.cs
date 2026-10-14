@@ -6,6 +6,11 @@ using GestureControl;
 try
 {
     if (args.Length > 0 && args[0] is "watch" or "foreground") return WatchCommands.Run(args);
+    if (args.Length == 1 && args[0] == "devices")
+    {
+        foreach (var camera in WindowsHidTransport.FindCameras()) Console.WriteLine(camera.DisplayName);
+        return 0;
+    }
     if (args.Length == 1 && args[0] == "ports")
     {
         foreach (var name in SerialPort.GetPortNames().Order()) Console.WriteLine(name);
@@ -15,14 +20,15 @@ try
     {
         Console.WriteLine("""
             GestureControl (.NET 10)
-              ports
-              info COM10
-              run COM10 [--left Alt+Left] [--right Alt+Right] [--disabled] [--seconds 30]
-              stop COM10
-              standalone COM10
-              verify COM10
+              devices (HID cameras)
+              ports (development serial ports)
+              info HID|COM10
+              run HID|COM10 [--left Alt+Left] [--right Alt+Right] [--disabled] [--seconds 30]
+              stop HID|COM10
+              standalone HID|COM10
+              verify HID|COM10
               foreground [--seconds 30]
-              watch COM10 --config profiles.json [--seconds 60]
+              watch HID|COM10 --config profiles.json [--seconds 60]
             run keeps the profile active until Ctrl+C or --seconds, then stops HID.
             None disables a direction. verify checks configuration/lease without sending keys and leaves HID stopped.
             standalone restores Alt+Left / Alt+Right without requiring this app.
@@ -45,7 +51,7 @@ try
             default: throw new ArgumentException("Unknown option or invalid value");
         }
     }
-    using var device = new DeviceConnection(new SerialTransport(args[1]));
+    using var device = ControlDevice.Open(args[1]);
     device.Log = line => { if (!line.StartsWith("@G1 ") && !line.StartsWith("@G2 ")) Console.Error.WriteLine(line); };
     var initial = device.Identify();
     Print(initial); // Validate firmware/model before sending control frames.

@@ -42,7 +42,7 @@ public sealed class SerialTransport : ILineTransport
 }
 
 // Single owner/worker: requests and heartbeats must be serialized by the caller.
-public sealed class DeviceConnection : IManagedDevice
+public sealed class DeviceConnection : IControlDevice
 {
     private readonly ILineTransport transport;
     private uint nextId;
