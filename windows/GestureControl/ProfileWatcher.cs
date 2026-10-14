@@ -6,7 +6,7 @@ public sealed record WatchStatus(WatchState State, string? Executable = null, Sh
 public interface IManagedDevice : IDisposable
 {
     DeviceState Identify();
-    DeviceState Configure(Binding left, Binding right, bool enabled);
+    DeviceState Configure(GestureBindings bindings, bool enabled);
     DeviceState KeepAlive();
     DeviceState Stop();
 }
@@ -63,7 +63,7 @@ public sealed class ProfileWatcher : IDisposable
             var profile = settings.Resolve(current.ExecutablePath);
             if (applied is null)
             {
-                var state = device.Configure(profile.Left, profile.Right, profile.Enabled);
+                var state = device.Configure(profile.Bindings, profile.Enabled);
                 if (!Matches(state, profile)) throw new InvalidDataException("Profile acknowledgement mismatch");
                 // Focus can change while SET waits for its ACK. Stop immediately
                 // and resample next tick instead of announcing the old profile.
@@ -77,7 +77,7 @@ public sealed class ProfileWatcher : IDisposable
                 applied = profile; heartbeatAt = clock();
                 StatusChanged?.Invoke(new(WatchState.Applied, current.Executable, profile));
                 Log?.Invoke($"APPLIED app={current.Executable} profile={profile.Name} enabled={(profile.Enabled ? 1 : 0)} " +
-                    $"left={profile.Left.Modifiers}:{profile.Left.Usage} right={profile.Right.Modifiers}:{profile.Right.Usage}");
+                    $"bindings={string.Join(",", profile.Bindings.Entries.Select(e => e.Key + "=" + e.Value.ToShortcutString()))}");
             }
             else if (clock() - heartbeatAt >= HeartbeatMs)
             {
@@ -96,7 +96,7 @@ public sealed class ProfileWatcher : IDisposable
         }
     }
     private static bool Matches(DeviceState state, ShortcutProfile profile) => state.Managed && state.LeaseActive &&
-        state.Enabled == profile.Enabled && state.Left == profile.Left && state.Right == profile.Right;
+        state.Enabled == profile.Enabled && state.Bindings.Equals(profile.Bindings);
     private void CloseDevice()
     {
         var old = device; device = null;

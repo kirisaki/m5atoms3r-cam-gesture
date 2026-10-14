@@ -5,9 +5,12 @@
 #include "hid_shortcut.h"
 
 namespace ShortcutProtocol {
+static constexpr size_t FrameCapacity = 1024;
 enum class Action { Get, Set, Keep, Stop, Standalone };
 struct Request {
     uint32_t id = 0;
+    unsigned version = 1;
+    ShortcutMap bindings;
     Action action = Action::Get;
     ShortcutBinding left, right;
     bool enabled = false;
@@ -40,7 +43,7 @@ public:
     char *line() { return buffer_; }
     bool invalid() const { return overflow_; }
 private:
-    char buffer_[128] = {};
+    char buffer_[FrameCapacity] = {};
     size_t size_ = 0;
     bool active_ = false, overflow_ = false;
 };
@@ -63,20 +66,40 @@ inline bool validBinding(uint32_t modifiers, uint32_t usage) {
 // Mutates the completed frame only. Invalid SET never changes device state.
 inline const char *parse(char *line, Request &request) {
     request = Request{};
-    char *tokens[8];
+    char *tokens[5 + 3 * ShortcutMap::MaxBindings];
     size_t count = 0;
     for (char *p = line; *p;) {
         while (*p == ' ') ++p;
         if (!*p) break;
-        if (count == 8) return "FORMAT";
+        if (count == sizeof(tokens) / sizeof(tokens[0])) return "FORMAT";
         tokens[count++] = p;
         while (*p && *p != ' ') ++p;
         if (*p) *p++ = '\0';
     }
-    if (count < 3 || std::strcmp(tokens[0], "@G1") ||
+    if (count && !std::strcmp(tokens[0], "@G2")) request.version = 2;
+    if (count < 3 || (std::strcmp(tokens[0], "@G1") && std::strcmp(tokens[0], "@G2")) ||
         !number(tokens[1], request.id) || !request.id) return "FORMAT";
     const char *op = tokens[2];
     if (!std::strcmp(op, "SET")) {
+        request.action = Action::Set;
+        if (request.version == 2) {
+            uint32_t enabled, size;
+            if (count < 5 || !number(tokens[3], enabled) || !number(tokens[4], size)) return "FORMAT";
+            if (enabled > 1 || size > ShortcutMap::MaxBindings) return "RANGE";
+            if (count != 5 + size * 3) return "FORMAT";
+            bool seen[ShortcutMap::Slots] = {};
+            for (size_t i = 0; i < size; ++i) {
+                const auto path = ShortcutMap::parsePath(tokens[5 + i * 3]);
+                uint32_t modifiers, usage;
+                if (!path || seen[path]) return "PATH";
+                seen[path] = true;
+                if (!number(tokens[6 + i * 3], modifiers) || !number(tokens[7 + i * 3], usage)) return "FORMAT";
+                if (!validBinding(modifiers, usage)) return "RANGE";
+                request.bindings.keys[path] = ShortcutBinding(modifiers, usage);
+            }
+            request.enabled = enabled != 0;
+            return nullptr;
+        }
         if (count != 8) return "FORMAT";
         uint32_t args[5];
         for (size_t i = 0; i < 5; ++i) if (!number(tokens[i + 3], args[i])) return "FORMAT";
@@ -85,6 +108,7 @@ inline const char *parse(char *line, Request &request) {
         request.left = ShortcutBinding(args[0], args[1]);
         request.right = ShortcutBinding(args[2], args[3]);
         request.enabled = args[4] != 0;
+        request.bindings.keys[1] = request.left; request.bindings.keys[2] = request.right;
     } else {
         if (count != 3) return "FORMAT";
         if (!std::strcmp(op, "GET")) request.action = Action::Get;

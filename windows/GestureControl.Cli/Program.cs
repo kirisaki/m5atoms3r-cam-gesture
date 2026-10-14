@@ -46,8 +46,9 @@ try
         }
     }
     using var device = new DeviceConnection(new SerialTransport(args[1]));
-    device.Log = line => { if (!line.StartsWith("@G1 ")) Console.Error.WriteLine(line); };
-    Print(device.Identify()); // Validate firmware/model before sending control frames.
+    device.Log = line => { if (!line.StartsWith("@G1 ") && !line.StartsWith("@G2 ")) Console.Error.WriteLine(line); };
+    var initial = device.Identify();
+    Print(initial); // Validate firmware/model before sending control frames.
     switch (args[0])
     {
         case "info": break;
@@ -66,6 +67,21 @@ try
             }
             break;
         case "verify":
+            if (initial.MaxSteps == 3)
+            {
+                var fullMap = new GestureBindings(GestureBindings.Paths.Select(path => new KeyValuePair<string, Binding>(path, new(255, 115))));
+                device.Configure(fullMap, false);
+                Require(device.Get().Bindings.Equals(fullMap), "52-binding map readback (USB receive capacity)");
+                Console.WriteLine("PASS: all 52 bindings transferred atomically with HID disabled.");
+                var map = new GestureBindings(new Dictionary<string, Binding>
+                {
+                    ["U"] = Binding.Parse("Up"), ["D"] = Binding.Parse("Down"),
+                    ["RD"] = Binding.Parse("Ctrl+Z"), ["RDL"] = Binding.Parse("Home")
+                });
+                Print(device.Configure(map, false));
+                Require(device.Get().Bindings.Equals(map), "sequence map readback");
+                Require(device.KeepAlive().Bindings.Equals(map), "sequence heartbeat readback");
+            }
             Print(device.Configure(Binding.Parse("Ctrl+PageUp"), Binding.Parse("Ctrl+PageDown"), false));
             for (var i = 0; i < 6; ++i) { Thread.Sleep(500); device.KeepAlive(); }
             var state = device.Get();

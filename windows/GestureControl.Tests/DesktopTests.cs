@@ -75,9 +75,9 @@ internal static class DesktopTests
         public int Stops;
         private DeviceState state = new(false, true, false, Binding.Left, Binding.Right);
         public DeviceState Identify() => state;
-        public DeviceState Configure(Binding left, Binding right, bool enabled)
+        public DeviceState Configure(GestureBindings bindings, bool enabled)
         {
-            state = new(true, enabled, true, left, right); Applied.TrySetResult(); return state;
+            state = new(true, enabled, true, bindings); Applied.TrySetResult(); return state;
         }
         public DeviceState KeepAlive() => state;
         public DeviceState Stop() { ++Stops; return state = state with { Managed = true, Enabled = false, LeaseActive = false }; }

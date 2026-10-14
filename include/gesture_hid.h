@@ -23,7 +23,7 @@ class GestureHid {
     uint32_t sent_ = 0, skipped_ = 0;
 public:
     void begin() {
-#if GESTURE_MEASUREMENT_ONLY
+#if GESTURE_MEASUREMENT_ONLY || GESTURE_SEQUENCE_HID
         shortcut_.setEnabled(false, millis());
 #endif
         keyboard_.begin(); USB.begin();
@@ -36,6 +36,13 @@ public:
         const auto key = shortcut_.binding(right);
         Serial.printf("# HID %s %s modifiers=%u usage=%u\n", right ? "RIGHT" : "LEFT",
                       sent ? "SENT" : "SKIPPED", key.modifiers, key.usage);
+    }
+    uint32_t generation() const { return shortcut_.generation(); }
+    void emitPath(uint8_t path, uint32_t generation) {
+        const bool sent = shortcut_.triggerPath(path, millis(), generation);
+        if (sent) ++sent_; else ++skipped_;
+        char text[4]; ShortcutMap::pathText(path, text);
+        Serial.printf("# HID PATH %s %s\n", text, sent ? "SENT" : "SKIPPED");
     }
     void setEnabled(bool enabled) {
 #if GESTURE_MEASUREMENT_ONLY
@@ -62,7 +69,13 @@ public:
             case Action::Get: break;
             case Action::Set:
                 if (measurement) error = "MEASUREMENT";
-                else shortcut_.configure(request.left, request.right, request.enabled, now);
+                else {
+#if !GESTURE_SEQUENCE_EXPERIMENT
+                    for (size_t i = 3; i < ShortcutMap::Slots; ++i)
+                        if (request.bindings.keys[i].usage) error = "UNSUPPORTED_PATH";
+#endif
+                    if (!error) shortcut_.configure(request.bindings, request.enabled, now);
+                }
                 break;
             case Action::Keep:
                 if (!shortcut_.keepAlive(now)) error = "EXPIRED";
@@ -74,7 +87,26 @@ public:
                 break;
         }
         if (error) {
-            Serial.printf("@G1 %lu ERR %s\n", static_cast<unsigned long>(request.id), error);
+            Serial.printf("@G%u %lu ERR %s\n", request.version, static_cast<unsigned long>(request.id), error);
+            return;
+        }
+        if (request.version == 2) {
+            const auto &map = shortcut_.bindings();
+#if GESTURE_SEQUENCE_EXPERIMENT
+            constexpr int maxSteps = 3;
+#else
+            constexpr int maxSteps = 1;
+#endif
+            Serial.printf("@G2 %lu OK ATOMS3R_CAM %s %d %d %d %u",
+                          static_cast<unsigned long>(request.id), shortcut_.managed() ? "MANAGED" : "STANDALONE",
+                          shortcut_.enabled(), shortcut_.leaseActive(), maxSteps, static_cast<unsigned>(map.count()));
+            for (size_t i = 1; i < ShortcutMap::Slots; ++i) {
+                const auto key = map.keys[i];
+                if (!key.usage) continue;
+                char path[4]; ShortcutMap::pathText(i, path);
+                Serial.printf(" %s %u %u", path, key.modifiers, key.usage);
+            }
+            Serial.println();
             return;
         }
         const auto left = shortcut_.binding(false), right = shortcut_.binding(true);

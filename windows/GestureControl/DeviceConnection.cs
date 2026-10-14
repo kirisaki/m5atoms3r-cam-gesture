@@ -47,6 +47,7 @@ public sealed class DeviceConnection : IManagedDevice
     private readonly ILineTransport transport;
     private uint nextId;
     private bool ownsManagedSession;
+    private int version = 1, maxSteps = 1;
     public Action<string>? Log { get; set; }
     public DeviceConnection(ILineTransport transport, uint? initialRequestId = null)
     {
@@ -67,6 +68,12 @@ public sealed class DeviceConnection : IManagedDevice
         {
             var line = transport.ReadLine(Math.Max(1, 2000 - (int)timer.ElapsedMilliseconds));
             Log?.Invoke(line);
+            if (line.TrimEnd('\r') == "# Control: @G2 <id> GET/SET/KEEP/STOP/STANDALONE (LF terminated)")
+            {
+                version = 2;
+                var state = Get(); maxSteps = state.MaxSteps;
+                return state;
+            }
             if (line.TrimEnd('\r') == "# Control: @G1 <id> GET/SET/KEEP/STOP/STANDALONE (LF terminated)") return Get();
         }
         throw new TimeoutException("Compatible camera firmware not found; update firmware before using this tool");
@@ -74,26 +81,30 @@ public sealed class DeviceConnection : IManagedDevice
     private DeviceState Request(string command)
     {
         if (++nextId == 0) ++nextId;
-        transport.Write(Protocol.Frame(nextId, command));
+        transport.Write(Protocol.Frame(nextId, command, version));
         var timer = Stopwatch.StartNew();
         const int timeout = 1000;
         while (timer.ElapsedMilliseconds < timeout)
         {
             var line = transport.ReadLine(Math.Max(1, timeout - (int)timer.ElapsedMilliseconds));
             Log?.Invoke(line);
-            var state = Protocol.Reply(line, nextId);
+            var state = Protocol.Reply(line, nextId, version);
             if (state != null) return state;
         }
         throw new TimeoutException($"No acknowledgement for {command}");
     }
     public DeviceState Get() => Request("GET");
     public DeviceState Configure(Binding left, Binding right, bool enabled)
+        => Configure(GestureBindings.Legacy(left, right), enabled);
+    public DeviceState Configure(GestureBindings bindings, bool enabled)
     {
-        var command = Protocol.Set(left, right, enabled);
+        if ((version == 1 || maxSteps == 1) && !bindings.IsLegacy)
+            throw new InvalidOperationException("上下・組み合わせには sequence-hid ファームウェアが必要です。");
+        var command = version == 2 ? Protocol.Set(bindings, enabled) : Protocol.Set(bindings["L"], bindings["R"], enabled);
         // Even a lost ACK may mean the device already applied SET: STOP on disposal.
         ownsManagedSession = true;
         var state = Request(command);
-        if (!state.Managed || !state.LeaseActive || state.Enabled != enabled || state.Left != left || state.Right != right)
+        if (!state.Managed || !state.LeaseActive || state.Enabled != enabled || !state.Bindings.Equals(bindings))
             throw new InvalidDataException("Device applied a different profile");
         return state;
     }
@@ -114,7 +125,7 @@ public sealed class DeviceConnection : IManagedDevice
     public DeviceState Standalone()
     {
         var state = Request("STANDALONE");
-        if (state.Managed || !state.Enabled || state.Left != Binding.Left || state.Right != Binding.Right)
+        if (state.Managed || !state.Enabled || !state.Bindings.Equals(GestureBindings.Legacy(Binding.Left, Binding.Right)))
             throw new InvalidDataException("Device did not restore standalone mode");
         ownsManagedSession = false;
         return state;

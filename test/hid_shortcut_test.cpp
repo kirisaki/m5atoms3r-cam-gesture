@@ -76,5 +76,27 @@ int main() {
     assert(!output.managed() && output.enabled());
     assert(output.trigger(false, 9000));
     assert(t.reports.back()[0] == 4 && t.reports.back()[2] == 80);
+    ShortcutMap map;
+    map.keys[ShortcutMap::parsePath("RD")] = {1, 29};
+    map.keys[ShortcutMap::parsePath("RDL")] = {0, 74};
+    map.keys[ShortcutMap::parsePath("U")] = {0, 82};
+    output.configure(map, true, 10000);
+    const auto generation = output.generation();
+    assert(!output.trigger(true, 10001)); // No prefix fallback.
+    assert(!output.triggerPath(ShortcutMap::parsePath("RDU"), 10002, generation));
+    assert(output.triggerPath(ShortcutMap::parsePath("RDL"), 10003, generation));
+    assert(t.reports.back()[0] == 0 && t.reports.back()[2] == 74);
+    output.configure(map, true, 10004); // Same mapping in a different foreground is a new session.
+    assert(neutral(t.reports.back()));
+    assert(!output.triggerPath(ShortcutMap::parsePath("RD"), 10005, generation));
+    const auto fresh = output.generation();
+    assert(output.triggerPath(ShortcutMap::parsePath("RD"), 10006, fresh));
+    assert(t.reports.back()[0] == 1 && t.reports.back()[2] == 29);
+    output.stop(10007); output.configure(map, true, 10008);
+    assert(!output.triggerPath(3, 10009, fresh));
+    const auto live = output.generation();
+    assert(!output.triggerPath(3, 12008, live)); // Expiry invalidates in-flight gestures.
+    output.standalone(13000);
+    assert(output.bindings().count() == 2 && !output.bindings().keys[14].usage);
     puts("HID shortcut tests passed");
 }

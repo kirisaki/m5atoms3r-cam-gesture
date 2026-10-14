@@ -101,9 +101,9 @@ internal static class ProfileTests
             if (FailIdentify) throw new TimeoutException("old firmware");
             return state;
         }
-        public DeviceState Configure(Binding left, Binding right, bool enabled)
+        public DeviceState Configure(GestureBindings bindings, bool enabled)
         {
-            Commands.Add("SET"); state = new(true, enabled, true, left, right); Profiles.Add(state);
+            Commands.Add("SET"); state = new(true, enabled, true, bindings); Profiles.Add(state);
             OnConfigure?.Invoke();
             if (FailConfigure) throw new TimeoutException("lost ACK");
             return state;

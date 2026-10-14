@@ -35,6 +35,7 @@ public partial class MainWindow : Window
         }
         AddRow(settings.Profiles.Default, true);
         foreach (var profile in settings.Profiles.Applications) AddRow(profile);
+        ProfileGrid.SelectedIndex = 0;
         RefreshPorts(initialPort ?? settings.Port);
         SaveText.Text = File.Exists(settingsPath) ? "保存済み設定を読み込みました。" : "開始または保存時に、ユーザーフォルダーへ設定を保存します。";
         if (loadFailed) SaveText.Text = "読み込み失敗。下の設定は初期値です。元ファイルは変更していません。";
@@ -86,13 +87,15 @@ public partial class MainWindow : Window
     {
         ProfileGrid.CommitEdit(DataGridEditingUnit.Cell, true);
         ProfileGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        GestureGrid.CommitEdit(DataGridEditingUnit.Cell, true);
+        GestureGrid.CommitEdit(DataGridEditingUnit.Row, true);
         var fallback = Rows.Single(r => r.IsDefault);
         var json = JsonSerializer.Serialize(new
         {
-            version = 1,
-            @default = new { enabled = fallback.Enabled, left = fallback.Left, right = fallback.Right },
+            version = 2,
+            @default = new { enabled = fallback.Enabled, bindings = fallback.ReadBindings() },
             applications = Rows.Where(r => !r.IsDefault).Select(r => new
-            { executable = r.Executable.Trim(), enabled = r.Enabled, left = r.Left, right = r.Right })
+            { executable = r.Executable.Trim(), enabled = r.Enabled, bindings = r.ReadBindings() })
         });
         return new(DesktopSettings.ValidatePort(PortBox.SelectedItem as string ?? "", requirePort), ProfileSettings.Parse(json));
     }
@@ -118,7 +121,7 @@ public partial class MainWindow : Window
             var device = new DeviceConnection(new SerialTransport(settings.Port));
             device.Log = line =>
             {
-                if (line.StartsWith("# HID LEFT ") || line.StartsWith("# HID RIGHT "))
+                if (line.StartsWith("# HID LEFT ") || line.StartsWith("# HID RIGHT ") || line.StartsWith("# HID PATH "))
                     OnUi(() => AppendLog(line));
             };
             return device;
@@ -189,7 +192,7 @@ public partial class MainWindow : Window
             WatchState.WaitingForFocus => ("接続済み — 切替先を確認中", status.Executable ?? "前面アプリを確認しています。"),
             WatchState.ForegroundUnavailable => (IsActive ? "設定画面を操作中 — 入力停止" : "前面アプリを取得できないため入力停止", "メモ帳やブラウザーへ切り替えると自動で再開します。"),
             WatchState.Applied => (status.Profile!.Enabled ? "接続済み — アプリ別切り替え中" : "接続済み — このアプリでは無効",
-                $"{status.Executable}   左: {status.Profile.Left.ToShortcutString()}   右: {status.Profile.Right.ToShortcutString()}"),
+                $"{status.Executable}   割り当て {status.Profile.Bindings.ActiveEntries.Count} 件"),
             WatchState.Disconnected => ("未接続 — 自動再接続を待っています", status.Error ?? "カメラのUSB接続を確認してください。"),
             WatchState.Faulted => ("監視を終了しました", status.Error ?? "開始し直してください。"),
             WatchState.Stopped => ("入力停止を確認しました", "再開するには開始ボタンを押してください。"),
@@ -207,7 +210,7 @@ public partial class MainWindow : Window
         trayToggle.Text = ToggleButton.Content.ToString();
         trayToggle.Enabled = ToggleButton.IsEnabled;
         PortBox.IsEnabled = RefreshButton.IsEnabled = available && !service.IsRunning;
-        SaveButton.IsEnabled = StandaloneButton.IsEnabled = AddButton.IsEnabled = RemoveButton.IsEnabled = ProfileGrid.IsEnabled = available;
+        SaveButton.IsEnabled = StandaloneButton.IsEnabled = AddButton.IsEnabled = RemoveButton.IsEnabled = ProfileGrid.IsEnabled = MappingEditor.IsEnabled = available;
     }
     private void AppendLog(string message)
     {
@@ -276,6 +279,20 @@ public partial class MainWindow : Window
     {
         AddRow(new("app.exe", Binding.Left, Binding.Right, true));
         ProfileGrid.SelectedItem = Rows[^1]; ProfileGrid.ScrollIntoView(Rows[^1]); MarkDirty();
+    }
+    private void AddGestureClick(object sender, RoutedEventArgs e)
+    {
+        if (ProfileGrid.SelectedItem is not ProfileRow row) return;
+        var path = new[] { "RD", "RDL" }.Concat(GestureChoice.All.Select(c => c.Path))
+            .FirstOrDefault(p => row.Gestures.All(g => g.Path != p));
+        if (path is null) return;
+        row.AddGesture(path); GestureGrid.SelectedItem = row.Gestures[^1];
+        GestureGrid.ScrollIntoView(row.Gestures[^1]);
+    }
+    private void RemoveGestureClick(object sender, RoutedEventArgs e)
+    {
+        if (ProfileGrid.SelectedItem is ProfileRow row && GestureGrid.SelectedItem is GestureRow gesture)
+            row.RemoveGesture(gesture);
     }
     private void RemoveClick(object sender, RoutedEventArgs e)
     {

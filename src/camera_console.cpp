@@ -31,13 +31,20 @@ void CameraApp::status() {
                   GestureConfig::Flow::MinX, GestureConfig::Flow::BottomCropPercent);
     Serial.println("# Commands: i/h=info b=reset flow a=axis m=reverse d=debug p=pause/resume v=image trace");
     Serial.println("# HID: 0=off 1=on (standalone only) [=test left ]=test right");
+    Serial.println("# Control: @G2 <id> GET/SET/KEEP/STOP/STANDALONE (LF terminated)");
     Serial.println("# Control: @G1 <id> GET/SET/KEEP/STOP/STANDALONE (LF terminated)");
     Serial.println("# USB: u=enter firmware download mode (stops camera until restart/upload)");
     Serial.println("# Measurement: r=start (HID off) s=stop c=START display cue (no key)");
 #if GESTURE_SEQUENCE_EXPERIMENT
-    Serial.printf("# sequence_experiment=1 max_segments=%d stop_quiet_ms=%lu rearm_delay_ms=%lu max_duration_ms=%lu HID_LOCKED_OFF\n",
+    Serial.printf("# sequence_experiment=1 max_segments=%d stop_quiet_ms=%lu rearm_delay_ms=%lu max_duration_ms=%lu hid_locked=%d\n",
                   GestureSequence::MaxSegments, GestureSequence::StopQuietMs,
-                  GestureSequence::RearmDelayMs, GestureSequence::MaxDurationMs);
+                  GestureSequence::RearmDelayMs, GestureSequence::MaxDurationMs,
+#if GESTURE_MEASUREMENT_ONLY
+                  1
+#else
+                  0
+#endif
+    );
     Serial.println("# motion_stop=1 background_exit=0");
     Serial.println("# Events: SEQUENCE SEGMENT/COMPLETE/CANCEL; x=right y=down; center=raw ROI pixels");
 #else
@@ -78,7 +85,7 @@ void CameraApp::handleCommands() {
         if (result == ShortcutProtocol::Framer::Result::Complete) {
             ShortcutProtocol::Request request;
             const char *error = shortcutFrames.invalid() ? "FRAME" : ShortcutProtocol::parse(shortcutFrames.line(), request);
-            if (error) Serial.printf("@G1 %lu ERR %s\n", static_cast<unsigned long>(request.id), error);
+            if (error) Serial.printf("@G%u %lu ERR %s\n", request.version, static_cast<unsigned long>(request.id), error);
             else gestureHid.command(request, measurement);
             continue;
         }

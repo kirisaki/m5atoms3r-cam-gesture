@@ -1,4 +1,5 @@
 #include "sequence_detector.h"
+#include "sequence_shortcut.h"
 #include <array>
 #include <cassert>
 #include <iostream>
@@ -22,6 +23,13 @@ struct Trial {
         for (int i = 0; i < static_cast<int>(Sequence::StopQuietMs / 50); ++i) result = tick();
         return result;
     }
+};
+struct SequenceOutput {
+    unsigned calls = 0;
+    uint8_t path = 0;
+    uint32_t current = 10, captured = 0;
+    uint32_t generation() const { return current; }
+    void emitPath(uint8_t p, uint32_t generation) { ++calls; path = p; captured = generation; }
 };
 using Image = std::array<uint8_t, GestureDetector::Pixels>;
 static Image scene(int left, int top) {
@@ -211,6 +219,25 @@ int main() {
         detector.process(scene(19, 10).data(), now += 50);
         const auto r = detector.process(scene(24, 10).data(), now += 50);
         assert(r.sequence.event == Sequence::Event::Segment && r.sequence.parts[0] == Direction::Down);
+    }
+    {
+        SequenceShortcut dispatch;
+        SequenceOutput output;
+        Sequence::Result r;
+        r.event = Sequence::Event::Segment; r.count = 1; r.parts[0] = Direction::Right;
+        dispatch.update(r, output);
+        r.count = 2; r.parts[1] = Direction::Down; dispatch.update(r, output);
+        r.count = 3; r.parts[2] = Direction::Left; dispatch.update(r, output);
+        assert(!output.calls);
+        ++output.current; // Captured generation must remain the one at gesture start.
+        r.event = Sequence::Event::Complete; dispatch.update(r, output);
+        assert(output.calls == 1 && output.path == 71 && output.captured == 10);
+        dispatch.update(r, output); assert(output.calls == 1); // Never replay completion.
+        r.event = Sequence::Event::Segment; r.count = 1; dispatch.update(r, output);
+        r.event = Sequence::Event::Cancel; dispatch.update(r, output);
+        r.event = Sequence::Event::Complete; dispatch.update(r, output); assert(output.calls == 1);
+        r.event = Sequence::Event::Segment; dispatch.update(r, output); dispatch.reset();
+        r.event = Sequence::Event::Complete; dispatch.update(r, output); assert(output.calls == 1);
     }
     std::cout << "PASS: direction flow, ROI isolation, short pause, hold completion/rearm, noise, cancellation and wraparound\n";
 }

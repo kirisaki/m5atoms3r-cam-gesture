@@ -13,6 +13,7 @@ void CameraApp::calibrate() {
     previousFlowMs = 0;
 #if GESTURE_SEQUENCE_EXPERIMENT
     previousSequenceMs = 0;
+    sequenceShortcut.reset();
 #endif
     warmupStarted = millis();
     camera.resetHistory();
@@ -83,7 +84,7 @@ void CameraApp::capture() {
     previousFlowMs = now;
     if (calibrating && latest.state == GestureDetector::State::Ready) {
 #if GESTURE_SEQUENCE_EXPERIMENT
-        Serial.println("# READY: sequence experiment; motion stop; 1-3 directions, then pause; HID locked off.");
+        Serial.println("# READY: sequence recognition; motion stop; 1-3 directions, then pause.");
 #else
         Serial.println("# READY: swipe horizontally, then pause briefly before the next swipe.");
 #endif
@@ -91,6 +92,7 @@ void CameraApp::capture() {
 #if GESTURE_SEQUENCE_EXPERIMENT
     const auto &sequence = latest.sequence;
     gestureBus.sequence(sequence, now);
+    sequenceShortcut.update(sequence, gestureHid);
     if (measurement) {
         Serial.printf("# SEQ_STOP_FLOW %lu %lu %.3f %.3f %d %d %.2f %.2f %d %lu %d %lu\n",
                       now, previousSequenceMs ? now - previousSequenceMs : 0,
@@ -120,6 +122,8 @@ void CameraApp::begin() {
     // Windows SerialPort.Close() can emit the CDC bootloader control sequence.
     // Only the explicit 'u' command should stop this always-on HID/I2C device.
     Serial.enableReboot(false);
+    // A complete 52-binding SET must survive a camera frame before commands are drained.
+    Serial.setRxBufferSize(2 * ShortcutProtocol::FrameCapacity);
     gestureHid.begin();
     Serial.begin(115200);
     const uint32_t started = millis();

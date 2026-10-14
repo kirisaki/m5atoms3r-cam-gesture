@@ -1,10 +1,7 @@
 #pragma once
 #include <cstdint>
 
-struct ShortcutBinding {
-    uint8_t modifiers, usage;
-    ShortcutBinding(uint8_t modifiers = 0, uint8_t usage = 0) : modifiers(modifiers), usage(usage) {}
-};
+#include "shortcut_map.h"
 
 // Transport supplies ready() and send(const uint8_t (&)[8]). No event queue:
 // disconnected/busy events are dropped, and uncertain sends are always released.
@@ -14,9 +11,15 @@ public:
     explicit HidShortcut(Transport &transport) : transport_(transport) {}
     static constexpr uint32_t LeaseMs = 2000;
     void configure(ShortcutBinding left, ShortcutBinding right, bool enabled, uint32_t now) {
-        // Release the previous mapping before atomically replacing both bindings.
+        ShortcutMap map;
+        map.keys[1] = left; map.keys[2] = right;
+        configure(map, enabled, now);
+    }
+    void configure(const ShortcutMap &map, bool enabled, uint32_t now) {
+        ++generation_;
+        // Release the previous mapping before atomically replacing all bindings.
         setEnabled(false, now);
-        left_ = left; right_ = right;
+        map_ = map;
         managed_ = leaseActive_ = true;
         refreshedAt_ = now;
         setEnabled(enabled, now);
@@ -28,23 +31,31 @@ public:
         return true;
     }
     void stop(uint32_t now) {
+        ++generation_;
         managed_ = true;
         leaseActive_ = false;
         setEnabled(false, now);
     }
     void standalone(uint32_t now) {
         setEnabled(false, now);
-        left_ = ShortcutBinding(4, 0x50); right_ = ShortcutBinding(4, 0x4f);
+        ++generation_;
+        map_ = ShortcutMap::defaults();
         managed_ = leaseActive_ = false;
         setEnabled(true, now);
     }
     bool managed() const { return managed_; }
     bool leaseActive() const { return leaseActive_; }
-    ShortcutBinding binding(bool right) const { return right ? right_ : left_; }
+    uint32_t generation() const { return generation_; }
+    const ShortcutMap &bindings() const { return map_; }
+    ShortcutBinding binding(bool right) const { return map_.keys[right ? 2 : 1]; }
     bool trigger(bool right, uint32_t now) {
+        return triggerPath(right ? 2 : 1, now, generation_);
+    }
+    bool triggerPath(uint8_t path, uint32_t now, uint32_t generation) {
         poll(now);
+        if (generation != generation_ || !ShortcutMap::validPath(path)) return false;
         if (!enabled_ || holding_ || releaseNeeded_ || !transport_.ready()) return false;
-        const auto key = binding(right);
+        const auto key = map_.keys[path];
         if (!key.usage) return false; // An individual direction can be disabled.
         uint8_t report[8] = {key.modifiers, 0, key.usage, 0, 0, 0, 0, 0};
         releaseNeeded_ = true;
@@ -58,6 +69,7 @@ public:
     }
     void poll(uint32_t now) {
         if (managed_ && leaseActive_ && now - refreshedAt_ >= LeaseMs) {
+            ++generation_;
             leaseActive_ = enabled_ = holding_ = false;
         }
         if (!transport_.ready()) {
@@ -73,6 +85,7 @@ public:
         }
     }
     void setEnabled(bool enabled, uint32_t now) {
+        if (enabled_ != enabled) ++generation_;
         enabled_ = enabled;
         if (!enabled) holding_ = false;
         poll(now);
@@ -83,7 +96,8 @@ private:
     Transport &transport_;
     bool enabled_ = true, holding_ = false, releaseNeeded_ = true;
     bool managed_ = false, leaseActive_ = false;
-    ShortcutBinding left_{4, 0x50}, right_{4, 0x4f};
+    ShortcutMap map_ = ShortcutMap::defaults();
+    uint32_t generation_ = 0;
     uint32_t refreshedAt_ = 0;
     uint32_t pressedAt_ = 0;
 };

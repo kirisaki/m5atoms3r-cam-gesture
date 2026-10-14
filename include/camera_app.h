@@ -5,7 +5,8 @@
 #include "gesture_hid.h"
 #if GESTURE_SEQUENCE_EXPERIMENT
 #include "sequence_detector.h"
-#if !GESTURE_MEASUREMENT_ONLY
+#include "sequence_shortcut.h"
+#if !GESTURE_MEASUREMENT_ONLY && !GESTURE_SEQUENCE_HID
 #error Sequence experiment must disable HID at build time
 #endif
 using CameraDetector = SequenceDetector;
@@ -38,6 +39,7 @@ private:
     uint32_t previousFlowMs = 0;
 #if GESTURE_SEQUENCE_EXPERIMENT
     uint32_t previousSequenceMs = 0;
+    SequenceShortcut sequenceShortcut;
 #endif
     uint32_t lastImage = 0;
     uint32_t frames = 0, events = 0, failures = 0;
