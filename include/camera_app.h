@@ -3,6 +3,15 @@
 #include "gesture_detector.h"
 #include "gesture_i2c.h"
 #include "gesture_hid.h"
+#if GESTURE_SEQUENCE_EXPERIMENT
+#include "sequence_detector.h"
+#if !GESTURE_MEASUREMENT_ONLY
+#error Sequence experiment must disable HID at build time
+#endif
+using CameraDetector = SequenceDetector;
+#else
+using CameraDetector = GestureDetector;
+#endif
 
 // Owns camera runtime state. Recognition stays independent of Arduino;
 // console commands and formatting live in camera_console.cpp.
@@ -12,7 +21,7 @@ public:
     void tick();
 private:
     CameraCapture camera;
-    GestureDetector detector;
+    CameraDetector detector;
     GestureI2c gestureBus;
     GestureHid gestureHid;
     ShortcutProtocol::Framer shortcutFrames;
@@ -27,12 +36,15 @@ private:
     bool imageTrace = false;
     bool measurement = false;
     uint32_t previousFlowMs = 0;
+#if GESTURE_SEQUENCE_EXPERIMENT
+    uint32_t previousSequenceMs = 0;
+#endif
     uint32_t lastImage = 0;
     uint32_t frames = 0, events = 0, failures = 0;
     uint32_t lastCapture = 0, lastDiagnostic = 0, warmupStarted = 0;
     uint32_t lastProcessingMs = 0;
     esp_err_t cameraError = ESP_OK;
-    GestureDetector::Result latest;
+    CameraDetector::Result latest;
 
     void calibrate();
     void capture();

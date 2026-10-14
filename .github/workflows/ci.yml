@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        environment: [atoms3r-cam, atoms3r-cam-measure, atoms3r-cam-fast, atoms3r-cam-fast-hid, atoms3r-cam-fast-crop, atoms3r-cam-fast-crop-hid, atoms3r-receiver]
+        environment: [atoms3r-cam, atoms3r-cam-measure, atoms3r-cam-fast, atoms3r-cam-fast-hid, atoms3r-cam-fast-crop, atoms3r-cam-fast-crop-hid, atoms3r-cam-sequence, atoms3r-receiver]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

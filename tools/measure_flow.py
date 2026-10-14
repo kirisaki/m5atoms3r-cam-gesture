@@ -12,6 +12,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', default='/dev/ttyACM0')
     parser.add_argument('--seconds', type=float, default=25)
+    parser.add_argument('--sequence', action='store_true', help='Require sequence experiment; report segment/complete/cancel events')
     parser.add_argument('--label', required=True, help='Intended action, not ground truth')
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
@@ -37,6 +38,7 @@ def main():
             deadline = None
             frames = 0
             events = []
+            sequences = []
             print('Keep still: calibrating, then a right arrow will signal the start.', flush=True)
             while deadline is None or time.monotonic() < deadline:
                 now = time.monotonic()
@@ -55,6 +57,25 @@ def main():
                     gray = bytes.fromhex(parts[3])
                     save({'ms': int(parts[2]), 'gray': gray.hex()})
                     frames += 1
+                elif line.startswith('# PRESENCE '):
+                    fields = line.split()[2:]
+                    if len(fields) != 7:
+                        raise RuntimeError('Incomplete background presence record')
+                    ms, state, changed, largest, fit, gain, offset = fields
+                    save({'presence': {'ms': int(ms), 'state': int(state), 'changed': int(changed),
+                                       'largest': int(largest), 'fit_pixels': int(fit),
+                                       'gain': float(gain), 'offset': float(offset)}})
+                elif line.startswith('# SEQ_STOP_FLOW '):
+                    fields = line.split()[2:]
+                    if len(fields) != 12:
+                        raise RuntimeError('Incomplete sequence flow record')
+                    ms, dt, x, y, inliers, moving, cx, cy, edges, idle, glob, processing = fields
+                    save({'sequence_flow': {'ms': int(ms), 'dt_ms': int(dt),
+                                           'x': float(x), 'y': float(y),
+                                           'inliers': int(inliers), 'moving': int(moving),
+                                           'center_x': float(cx), 'center_y': float(cy),
+                                           'edge_votes': int(edges), 'idle_ms': int(idle),
+                                           'global': bool(int(glob)), 'processing_ms': int(processing)}})
                 elif line.startswith('# FLOW '):
                     fields = line.split()[2:]
                     if len(fields) != 9:
@@ -72,7 +93,12 @@ def main():
                     if line == '# hid_enabled=0':
                         disabled = True
                     if line.startswith('# READY'):
+                        if args.sequence and 'sequence experiment' not in line:
+                            raise RuntimeError('Sequence experiment firmware is required')
                         ready = True
+                    if line.startswith('# SEQUENCE '):
+                        sequences.append(line)
+                        print(line, flush=True)
                     if line.startswith('# TRIAL_CUE'):
                         if not cue_sent or not line.endswith('ack=1'):
                             raise RuntimeError(f'Display cue failed: {line}')
@@ -83,8 +109,8 @@ def main():
                         print(line, flush=True)
                     if 'SENT' in line and line.startswith('# HID '):
                         raise RuntimeError('Unexpected HID output during measurement')
-            save({'complete': True, 'frames': frames, 'events': events})
-            print(f'DONE: {frames} frames, events={events}, file={args.out}', flush=True)
+            save({'complete': True, 'frames': frames, 'events': events, 'sequences': sequences})
+            print(f'DONE: {frames} frames, events={events}, sequence_events={len(sequences)}, file={args.out}', flush=True)
         finally:
             try:
                 port.write(b'0si')

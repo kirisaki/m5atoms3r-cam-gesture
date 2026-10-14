@@ -5,8 +5,14 @@ using namespace GestureConfig::Runtime;
 
 void CameraApp::calibrate() {
     detector.setVerticalAxis(verticalAxis);
+#if GESTURE_SEQUENCE_EXPERIMENT
+    detector.setMirror(mirror);
+#endif
     latest = {};
     previousFlowMs = 0;
+#if GESTURE_SEQUENCE_EXPERIMENT
+    previousSequenceMs = 0;
+#endif
     warmupStarted = millis();
     camera.resetHistory();
     lastGoodFrame = millis();
@@ -75,9 +81,38 @@ void CameraApp::capture() {
     }
     previousFlowMs = now;
     if (calibrating && latest.state == GestureDetector::State::Ready) {
+#if GESTURE_SEQUENCE_EXPERIMENT
+        Serial.println("# READY: sequence experiment; motion stop; 1-3 directions, then pause; HID locked off.");
+#else
         Serial.println("# READY: swipe horizontally, then pause briefly before the next swipe.");
+#endif
     }
+#if GESTURE_SEQUENCE_EXPERIMENT
+    const auto &sequence = latest.sequence;
+    if (measurement) {
+        Serial.printf("# SEQ_STOP_FLOW %lu %lu %.3f %.3f %d %d %.2f %.2f %d %lu %d %lu\n",
+                      now, previousSequenceMs ? now - previousSequenceMs : 0,
+                      latest.alongFlow, latest.acrossFlow, latest.inliers, latest.movingPatches,
+                      latest.centerX, latest.centerY, latest.edgeVotes, sequence.idleMs,
+                      latest.globalMotion, lastProcessingMs);
+    }
+    previousSequenceMs = now;
+    if (sequence.event != GestureSequence::Event::None) {
+        const char *event = sequence.event == GestureSequence::Event::Segment ? "SEGMENT" :
+                            sequence.event == GestureSequence::Event::Complete ? "COMPLETE" : "CANCEL";
+        Serial.printf("# SEQUENCE %s ms=%lu path=", event, now);
+        for (int i = 0; i < sequence.count; ++i) {
+            if (i) Serial.print('>');
+            Serial.print(GestureProtocol::directionName(sequence.parts[i]));
+        }
+        Serial.printf(" reason=%s\n", GestureSequence::reasonName(sequence.reason));
+        if (sequence.event == GestureSequence::Event::Segment)
+            gestureBus.emit(sequence.parts[sequence.count - 1], now);
+        if (sequence.event == GestureSequence::Event::Complete) ++events;
+    }
+#else
     emitGesture(latest.direction);
+#endif
     reportDetection(now);
 }
 

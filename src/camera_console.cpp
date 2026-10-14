@@ -34,7 +34,15 @@ void CameraApp::status() {
     Serial.println("# Control: @G1 <id> GET/SET/KEEP/STOP/STANDALONE (LF terminated)");
     Serial.println("# USB: u=enter firmware download mode (stops camera until restart/upload)");
     Serial.println("# Measurement: r=start (HID off) s=stop c=right display cue (no key)");
+#if GESTURE_SEQUENCE_EXPERIMENT
+    Serial.printf("# sequence_experiment=1 max_segments=%d stop_quiet_ms=%lu rearm_delay_ms=%lu max_duration_ms=%lu HID_LOCKED_OFF\n",
+                  GestureSequence::MaxSegments, GestureSequence::StopQuietMs,
+                  GestureSequence::RearmDelayMs, GestureSequence::MaxDurationMs);
+    Serial.println("# motion_stop=1 background_exit=0");
+    Serial.println("# Events: SEQUENCE SEGMENT/COMPLETE/CANCEL; x=right y=down; center=raw ROI pixels");
+#else
     Serial.println("# Events: ALT_LEFT / ALT_RIGHT (legacy direction names; HID mapping may differ)");
+#endif
     gestureBus.printStatus();
     gestureHid.printStatus();
 }
