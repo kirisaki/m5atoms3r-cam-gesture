@@ -15,7 +15,9 @@ jobs:
           dotnet-version: '10.0.x'
       - run: dotnet restore windows/GestureControl.Cli --locked-mode
       - run: dotnet restore windows/GestureControl.Tests --locked-mode
+      - run: dotnet restore windows/GestureControl.Desktop --locked-mode
       - run: dotnet build windows/GestureControl.Cli --no-restore
+      - run: dotnet build windows/GestureControl.Desktop --no-restore
       - run: dotnet run --project windows/GestureControl.Tests --no-restore
 
   host:

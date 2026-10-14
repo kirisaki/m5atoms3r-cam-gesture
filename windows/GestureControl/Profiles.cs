@@ -9,6 +9,7 @@ public sealed class ProfileSettings
 {
     private readonly Dictionary<string, ShortcutProfile> applications;
     public ShortcutProfile Default { get; }
+    public IReadOnlyCollection<ShortcutProfile> Applications => applications.Values;
     private ProfileSettings(ShortcutProfile fallback, Dictionary<string, ShortcutProfile> applications)
         => (Default, this.applications) = (fallback, applications);
 
@@ -19,6 +20,19 @@ public sealed class ProfileSettings
     }
     public static string ExecutableName(string path) => path.Replace('\\', '/').Split('/')[^1];
     public static ProfileSettings Load(string path) => Parse(File.ReadAllText(path));
+    public string ToJson()
+    {
+        static object Profile(ShortcutProfile p) => new { enabled = p.Enabled, left = p.Left.ToShortcutString(), right = p.Right.ToShortcutString() };
+        return JsonSerializer.Serialize(new
+        {
+            version = 1,
+            @default = Profile(Default),
+            applications = applications.Values.Select(p => new
+            {
+                executable = p.Name, enabled = p.Enabled, left = p.Left.ToShortcutString(), right = p.Right.ToShortcutString()
+            })
+        }, new JsonSerializerOptions { WriteIndented = true });
+    }
     public static ProfileSettings Parse(string json)
     {
         var options = new JsonSerializerOptions

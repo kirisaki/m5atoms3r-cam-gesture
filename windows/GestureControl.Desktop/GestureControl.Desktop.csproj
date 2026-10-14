@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>GestureControl.Desktop</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../GestureControl/GestureControl.csproj" />
+    <Content Include="../profiles.example.json" Link="profiles.example.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

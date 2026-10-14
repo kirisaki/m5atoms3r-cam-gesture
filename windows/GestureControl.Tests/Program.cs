@@ -84,6 +84,7 @@ using (var device = new DeviceConnection(wire, initialRequestId: 0))
 Console.WriteLine("PASS: firmware compatibility probe.");
 
 ProfileTests.Run();
+await DesktopTests.RunAsync();
 
 sealed class FakeTransport : ILineTransport
 {

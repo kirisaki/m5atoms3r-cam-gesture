@@ -1,0 +1,80 @@
+<Window x:Class="GestureControl.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AtomS3R Gesture" Width="720" Height="520" MinWidth="660" MinHeight="480"
+        Background="#F3F6F8" Foreground="#172B3A" FontFamily="Yu Gothic UI, Segoe UI" FontSize="13"
+        Closing="OnClosing" WindowStartupLocation="CenterScreen">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Border Grid.Row="0" Background="White" CornerRadius="5" Padding="10" Margin="0,0,0,6">
+            <StackPanel>
+                <DockPanel LastChildFill="False">
+                    <TextBlock Text="カメラ" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <ComboBox x:Name="PortBox" Width="100" Height="28" VerticalContentAlignment="Center" SelectionChanged="PortChanged" AutomationProperties.AutomationId="PortBox"/>
+                    <Button x:Name="RefreshButton" Content="再検索" Click="RefreshClick" Margin="6,0,10,0"/>
+                    <Button x:Name="ToggleButton" Content="開始" Background="{StaticResource Accent}" Foreground="White" Click="ToggleClick" AutomationProperties.AutomationId="ToggleButton"/>
+                    <Button x:Name="StandaloneButton" Content="通常のAlt＋左右へ戻す" Click="StandaloneClick" AutomationProperties.AutomationId="StandaloneButton" Margin="0"/>
+                </DockPanel>
+                <TextBlock x:Name="StatusText" Text="未開始 — カメラのポートを選び、開始してください。" FontWeight="SemiBold" Margin="0,8,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="StatusText"/>
+                <TextBlock x:Name="ActiveText" Text="開始前はカメラの入力設定を変更しません。" Foreground="#566B78" Margin="0,3,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="ActiveText"/>
+            </StackPanel>
+        </Border>
+        <DockPanel Grid.Row="1" Margin="0,0,0,6">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="AddButton" Content="アプリを追加" Click="AddClick" AutomationProperties.AutomationId="AddButton"/>
+                <Button x:Name="RemoveButton" Content="選択行を削除" Click="RemoveClick" Margin="0"/>
+            </StackPanel>
+            <TextBlock Text="アプリごとの割り当て" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+        </DockPanel>
+        <DataGrid Grid.Row="2" x:Name="ProfileGrid" ItemsSource="{Binding Rows}" AutoGenerateColumns="False"
+                  CanUserAddRows="False" CanUserDeleteRows="False" CanUserSortColumns="False" HeadersVisibility="Column"
+                  GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E3EAEE" RowBackground="White" AlternatingRowBackground="#F8FAFB"
+                  RowHeight="32" ColumnHeaderHeight="30" BorderBrush="#D7E1E7" SelectionMode="Single"
+                  AutomationProperties.AutomationId="ProfileGrid">
+            <DataGrid.Columns>
+                <DataGridTemplateColumn Header="有効" Width="46">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate><CheckBox IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/></DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="アプリの実行ファイル名" Width="2*">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate><TextBox Text="{Binding Executable, UpdateSourceTrigger=PropertyChanged}" IsReadOnly="{Binding IsDefault}" BorderThickness="0" Background="Transparent"/></DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="左へスワイプ" Width="*">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate><TextBox Text="{Binding Left, UpdateSourceTrigger=PropertyChanged}" BorderThickness="0" Background="Transparent"/></DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="右へスワイプ" Width="*">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate><TextBox Text="{Binding Right, UpdateSourceTrigger=PropertyChanged}" BorderThickness="0" Background="Transparent"/></DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+        <StackPanel Grid.Row="3" Margin="0,6,0,0">
+            <TextBlock x:Name="ErrorText" Foreground="#A92929" TextWrapping="Wrap" AutomationProperties.AutomationId="ErrorText"/>
+            <DockPanel Margin="0,6,0,8">
+                <Button DockPanel.Dock="Right" Content="終了" Click="ExitClick" AutomationProperties.AutomationId="ExitButton" Margin="6,0,0,0"/>
+                <Button x:Name="SaveButton" DockPanel.Dock="Right" Content="保存して適用" Click="SaveClick" AutomationProperties.AutomationId="SaveButton" Margin="8,0,0,0"/>
+                <TextBlock x:Name="SaveText" Text="設定はまだ変更されていません。" VerticalAlignment="Center" Foreground="#566B78" FontSize="12" TextWrapping="Wrap"/>
+            </DockPanel>
+        </StackPanel>
+        <Expander Grid.Row="4" Header="使い方・接続ログ" FontSize="12">
+            <ScrollViewer MaxHeight="145" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,4,0,0">
+                    <TextBlock Text="例：Ctrl+Z、Ctrl+Shift+Z、Alt+Left、None（この方向を無効）" Foreground="#566B78" TextWrapping="Wrap"/>
+                    <TextBlock Text="アプリ名は notepad.exe など。切り替え後は約0.5秒待って操作してください。" Foreground="#566B78" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                    <TextBlock Text="×で閉じるとトレイで動作を続けます。終了は下のボタンかトレイメニューから。" Foreground="#566B78" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                    <TextBlock x:Name="SettingsPathText" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,4"/>
+                    <TextBox x:Name="LogText" Height="70" IsReadOnly="True" FontFamily="Consolas" FontSize="11" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Expander>
+    </Grid>
+</Window>

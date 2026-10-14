@@ -1,5 +1,8 @@
 namespace GestureControl;
 
+public enum WatchState { WaitingForFocus, ForegroundUnavailable, Applied, Disconnected, Stopped, Faulted }
+public sealed record WatchStatus(WatchState State, string? Executable = null, ShortcutProfile? Profile = null, string? Error = null);
+
 public interface IManagedDevice : IDisposable
 {
     DeviceState Identify();
@@ -23,6 +26,7 @@ public sealed class ProfileWatcher : IDisposable
     private long candidateSince, heartbeatAt, retryAt;
     private bool observed, disposed, identified;
     public Action<string>? Log { get; set; }
+    public Action<WatchStatus>? StatusChanged { get; set; }
 
     public ProfileWatcher(ProfileSettings settings, Func<ForegroundApp?> foreground,
         Func<IManagedDevice> connect, Func<long>? clock = null)
@@ -44,12 +48,14 @@ public sealed class ProfileWatcher : IDisposable
                 device.Stop(); // Stop standalone/previous profile before selecting the CURRENT app.
                 observed = false; candidate = null; applied = null;
                 Log?.Invoke("CONNECTED; HID stopped while checking foreground");
+                StatusChanged?.Invoke(new(WatchState.WaitingForFocus));
             }
             var current = foreground(); // Always sampled after a reconnect, never cached across it.
             if (!observed || current != candidate)
             {
                 if (applied is not null) device.Stop();
                 applied = null; candidate = current; candidateSince = clock(); observed = true;
+                StatusChanged?.Invoke(new(current is null ? WatchState.ForegroundUnavailable : WatchState.WaitingForFocus, current?.Executable));
                 Log?.Invoke(current is null ? "PAUSED: foreground unavailable" : $"FOREGROUND {current.Executable}; waiting for stable focus");
                 return;
             }
@@ -65,9 +71,11 @@ public sealed class ProfileWatcher : IDisposable
                 {
                     device.Stop(); observed = false; candidate = null;
                     Log?.Invoke("PAUSED: foreground changed while applying profile");
+                    StatusChanged?.Invoke(new(WatchState.WaitingForFocus));
                     return;
                 }
                 applied = profile; heartbeatAt = clock();
+                StatusChanged?.Invoke(new(WatchState.Applied, current.Executable, profile));
                 Log?.Invoke($"APPLIED app={current.Executable} profile={profile.Name} enabled={(profile.Enabled ? 1 : 0)} " +
                     $"left={profile.Left.Modifiers}:{profile.Left.Usage} right={profile.Right.Modifiers}:{profile.Right.Usage}");
             }
@@ -83,6 +91,7 @@ public sealed class ProfileWatcher : IDisposable
             // then retry only this explicitly selected port after a delay.
             CloseDevice(); observed = false; candidate = null; applied = null;
             retryAt = clock() + ReconnectMs;
+            StatusChanged?.Invoke(new(WatchState.Disconnected, Error: e.Message));
             Log?.Invoke($"DISCONNECTED: {e.Message}; retry in {ReconnectMs} ms");
         }
     }
@@ -98,10 +107,14 @@ public sealed class ProfileWatcher : IDisposable
             {
                 old.Stop();
                 Log?.Invoke("STOPPED: device acknowledged HID off");
+                StatusChanged?.Invoke(new(WatchState.Stopped));
             }
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or InvalidOperationException)
-        { Log?.Invoke($"STOP unavailable: {e.Message}; device heartbeat timeout will stop HID"); }
+        {
+            Log?.Invoke($"STOP unavailable: {e.Message}; device heartbeat timeout will stop HID");
+            StatusChanged?.Invoke(new(WatchState.Disconnected, Error: e.Message));
+        }
         finally
         {
             identified = false;

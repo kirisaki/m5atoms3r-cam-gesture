@@ -9,6 +9,26 @@ public readonly record struct Binding(byte Modifiers, byte Usage)
     public static Binding Right => new(4, 79);
     public bool IsValid => Usage == 0 ? Modifiers == 0 : Usage is >= 4 and <= 0x73;
 
+    public string ToShortcutString()
+    {
+        if (this == default) return "None";
+        var key = Usage switch
+        {
+            >= 4 and <= 29 => ((char)('A' + Usage - 4)).ToString(),
+            >= 30 and <= 38 => ((char)('1' + Usage - 30)).ToString(),
+            >= 58 and <= 69 => $"F{Usage - 57}",
+            >= 104 and <= 115 => $"F{Usage - 91}",
+            39 => "0", 40 => "Enter", 41 => "Esc", 42 => "Backspace", 43 => "Tab", 44 => "Space",
+            73 => "Insert", 74 => "Home", 75 => "PageUp", 76 => "Delete", 77 => "End", 78 => "PageDown",
+            79 => "Right", 80 => "Left", 81 => "Down", 82 => "Up",
+            _ => throw new InvalidDataException($"Unsupported shortcut usage: {Usage}")
+        };
+        string[] names = ["Ctrl", "Shift", "Alt", "Win", "RCtrl", "RShift", "RAlt", "RWin"];
+        var modifiers = Modifiers;
+        var parts = names.Where((_, i) => (modifiers & (1 << i)) != 0).Append(key);
+        return string.Join('+', parts);
+    }
+
     public static Binding Parse(string text)
     {
         if (text.Any(char.IsControl)) throw new ArgumentException("Control characters are not valid in a shortcut");
